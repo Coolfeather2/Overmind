@@ -293,7 +293,7 @@ export class TerminalNetwork implements ITerminalNetwork {
 		}
 		this.handleAbandonedTerminals();
 		let terminalToSellExcess = this.terminals[Game.time % this.terminals.length];
-		this.sellExcess(terminalToSellExcess);
+		if (terminalToSellExcess) this.sellExcess(terminalToSellExcess);
 	}
 
 }
