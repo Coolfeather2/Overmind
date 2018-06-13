@@ -64,7 +64,7 @@ export class Hatchery extends HiveCluster {
 			supplierSize           : _.min([_.ceil(2 * (this.extensions.length + 1) / 5), 8]),
 			numSuppliers           : 1,
 			queenSize              : _.min([_.ceil(2 * (this.extensions.length + 1) / 5), 8]),
-			numQueens              : 1,
+			numQueens              : 2,
 			renewQueenAt           : 1000,
 			suppressSpawning       : false,
 		};

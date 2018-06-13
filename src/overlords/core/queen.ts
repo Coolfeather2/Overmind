@@ -32,7 +32,7 @@ export class HatcheryOverlord extends Overlord {
 	}
 
 	init() {
-		let amount = 1;
+		let amount = 2;
 		// if (this.colony.defcon > DEFCON.invasionNPC) {
 		// 	amount = 2;
 		// }
