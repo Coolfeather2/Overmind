@@ -1,5 +1,5 @@
-import * as Profiler from 'screeps-profiler';
-import {USE_PROFILER} from '../settings/config';
+import profiler from 'screeps-profiler';
+import {USE_PROFILER} from '../~settings';
 
 export function profile(target: Function): void;
 export function profile(target: object, key: string | symbol, _descriptor: TypedPropertyDescriptor<Function>): void;
@@ -12,7 +12,7 @@ export function profile(target: object | Function,
 
 	if (key) {
 		// case of method decorator
-		Profiler.registerFN(target as Function, key as string);
+		profiler.registerFN(target as Function, key as string);
 		return;
 	}
 
@@ -24,6 +24,6 @@ export function profile(target: object | Function,
 	}
 
 	const className = ctor.name;
-	Profiler.registerClass(target as Function, className);
+	profiler.registerClass(target as Function, className);
 
 }

@@ -1,29 +1,30 @@
 // Reinstantiation of a task object from protoTask data
 
-import {attackTargetType, attackTaskName, TaskAttack} from './task_attack';
-import {buildTargetType, buildTaskName, TaskBuild} from './task_build';
-import {claimTargetType, claimTaskName, TaskClaim} from './task_claim';
-import {depositTargetType, depositTaskName, TaskDeposit} from './task_deposit';
-import {dismantleTargetType, dismantleTaskName, TaskDismantle} from './task_dismantle';
-import {fortifyTargetType, fortifyTaskName, TaskFortify} from './task_fortify';
-import {getBoostedTargetType, getBoostedTaskName, TaskGetBoosted} from './task_getBoosted';
-import {getRenewedTargetType, getRenewedTaskName, TaskGetRenewed} from './task_getRenewed';
-import {goToTargetType, goToTaskName, TaskGoTo} from './task_goTo';
-import {goToRoomTargetType, goToRoomTaskName, TaskGoToRoom} from './task_goToRoom';
-import {harvestTargetType, harvestTaskName, TaskHarvest} from './task_harvest';
-import {healTargetType, healTaskName, TaskHeal} from './task_heal';
-// import {loadLabTargetType, loadLabTaskName, TaskLoadLab} from '../tasks/task_loadLab';
-import {meleeAttackTargetType, meleeAttackTaskName, TaskMeleeAttack} from './task_meleeAttack';
-import {pickupTargetType, pickupTaskName, TaskPickup} from './task_pickup';
-import {rangedAttackTargetType, rangedAttackTaskName, TaskRangedAttack} from './task_rangedAttack';
-import {TaskWithdraw, withdrawTargetType, withdrawTaskName} from './task_withdraw';
-import {repairTargetType, repairTaskName, TaskRepair} from './task_repair';
-import {reserveTargetType, reserveTaskName, TaskReserve} from './task_reserve';
-import {signControllerTargetType, signControllerTaskName, TaskSignController} from './task_signController';
-import {TaskTransfer, transferTargetType, transferTaskName} from './task_transfer';
-import {TaskUpgrade, upgradeTargetType, upgradeTaskName} from './task_upgrade';
-import {TaskWithdrawResource, withdrawResourceTargetType, withdrawResourceTaskName} from './task_withdrawResource';
-import {dropTargetType, dropTaskName, TaskDrop} from './task_drop';
+import {attackTargetType, attackTaskName, TaskAttack} from './instances/attack';
+import {buildTargetType, buildTaskName, TaskBuild} from './instances/build';
+import {claimTargetType, claimTaskName, TaskClaim} from './instances/claim';
+import {dismantleTargetType, dismantleTaskName, TaskDismantle} from './instances/dismantle';
+import {fortifyTargetType, fortifyTaskName, TaskFortify} from './instances/fortify';
+import {getBoostedTargetType, getBoostedTaskName, TaskGetBoosted} from './instances/getBoosted';
+import {getRenewedTargetType, getRenewedTaskName, TaskGetRenewed} from './instances/getRenewed';
+import {goToTaskName} from './instances/goTo';
+import {goToRoomTargetType, goToRoomTaskName, TaskGoToRoom} from './instances/goToRoom';
+import {harvestTargetType, harvestTaskName, TaskHarvest} from './instances/harvest';
+import {healTargetType, healTaskName, TaskHeal} from './instances/heal';
+import {meleeAttackTargetType, meleeAttackTaskName, TaskMeleeAttack} from './instances/meleeAttack';
+import {pickupTargetType, pickupTaskName, TaskPickup} from './instances/pickup';
+import {rangedAttackTargetType, rangedAttackTaskName, TaskRangedAttack} from './instances/rangedAttack';
+import {TaskWithdraw, withdrawTargetType, withdrawTaskName} from './instances/withdraw';
+import {repairTargetType, repairTaskName, TaskRepair} from './instances/repair';
+import {reserveTargetType, reserveTaskName, TaskReserve} from './instances/reserve';
+import {signControllerTargetType, signControllerTaskName, TaskSignController} from './instances/signController';
+import {TaskTransfer, transferTargetType, transferTaskName} from './instances/transfer';
+import {TaskUpgrade, upgradeTargetType, upgradeTaskName} from './instances/upgrade';
+import {dropTargetType, dropTaskName, TaskDrop} from './instances/drop';
+import {TaskInvalid} from './instances/invalid';
+import {fleeTargetType, fleeTaskName, TaskFlee} from './instances/flee';
+import {TaskTransferAll, transferAllTargetType, transferAllTaskName} from './instances/transferAll';
+import {log} from '../lib/logger/log';
 
 export function initializeTask(protoTask: protoTask): any {
 	// Retrieve name and target data from the protoTask
@@ -41,26 +42,28 @@ export function initializeTask(protoTask: protoTask): any {
 		case claimTaskName:
 			task = new TaskClaim(target as claimTargetType);
 			break;
-		case depositTaskName:
-			task = new TaskDeposit(target as depositTargetType);
-			break;
 		case dismantleTaskName:
 			task = new TaskDismantle(target as dismantleTargetType);
 			break;
 		case dropTaskName:
-			task = new TaskDrop(target as dropTargetType);
+			task = new TaskDrop(derefRoomPosition(protoTask._target._pos) as dropTargetType);
+			break;
+		case fleeTaskName:
+			task = new TaskFlee(derefRoomPosition(protoTask._target._pos) as fleeTargetType);
 			break;
 		case fortifyTaskName:
 			task = new TaskFortify(target as fortifyTargetType);
 			break;
 		case getBoostedTaskName:
-			task = new TaskGetBoosted(target as getBoostedTargetType);
+			task = new TaskGetBoosted(target as getBoostedTargetType,
+									  protoTask.data.resourceType as _ResourceConstantSansEnergy);
 			break;
 		case getRenewedTaskName:
 			task = new TaskGetRenewed(target as getRenewedTargetType);
 			break;
 		case goToTaskName:
-			task = new TaskGoTo(derefRoomPosition(protoTask._target._pos) as goToTargetType);
+			// task = new TaskGoTo(derefRoomPosition(protoTask._target._pos) as goToTargetType);
+			task = new TaskInvalid(target as any);
 			break;
 		case goToRoomTaskName:
 			task = new TaskGoToRoom(protoTask._target._pos.roomName as goToRoomTargetType);
@@ -71,9 +74,6 @@ export function initializeTask(protoTask: protoTask): any {
 		case healTaskName:
 			task = new TaskHeal(target as healTargetType);
 			break;
-		// case loadLabTaskName:
-		// 	task = new TaskLoadLab(target as loadLabTargetType);
-		// 	break;
 		case meleeAttackTaskName:
 			task = new TaskMeleeAttack(target as meleeAttackTargetType);
 			break;
@@ -98,16 +98,20 @@ export function initializeTask(protoTask: protoTask): any {
 		case transferTaskName:
 			task = new TaskTransfer(target as transferTargetType);
 			break;
+		case transferAllTaskName:
+			task = new TaskTransferAll(target as transferAllTargetType);
+			break;
 		case upgradeTaskName:
 			task = new TaskUpgrade(target as upgradeTargetType);
 			break;
-		case withdrawResourceTaskName:
-			task = new TaskWithdrawResource(target as withdrawResourceTargetType);
+		default:
+			log.error(`Invalid task name: ${taskName}! task.creep: ${protoTask._creep.name}. Deleting from memory!`);
+			task = new TaskInvalid(target as any);
 			break;
 	}
 	// Modify the task object to reflect any changed properties
-	task!.proto = protoTask;
+	task.proto = protoTask;
 	// Return it
-	return task!;
+	return task;
 }
 

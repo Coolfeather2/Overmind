@@ -1,17 +1,21 @@
 interface TaskSettings {
 	targetRange: number;
 	workOffRoad: boolean;
+	oneShot: boolean;
 }
 
 interface TaskOptions {
 	blind?: boolean;
-	travelToOptions: TravelToOptions;
+	nextPos?: protoPos;
+	travelToOptions?: TravelToOptions;
 }
 
 interface TaskData {
 	quiet?: boolean;
 	resourceType?: string;
 	amount?: number;
+
+	[other: string]: any;
 }
 
 interface protoTask {
@@ -24,6 +28,7 @@ interface protoTask {
 		_pos: protoPos;
 	};
 	_parent: protoTask | null;
+	tick: number;
 	options: TaskOptions;
 	data: TaskData;
 }
@@ -36,6 +41,9 @@ interface ITask extends protoTask {
 	targetPos: RoomPosition;
 	parent: ITask | null;
 	manifest: ITask[];
+	targetManifest: (RoomObject | null)[];
+	targetPosManifest: RoomPosition[];
+	eta: number | undefined;
 
 	fork(newTask: ITask): ITask;
 
@@ -47,6 +55,8 @@ interface ITask extends protoTask {
 
 	move(): number;
 
+	moveToNextPos(): number | undefined;
+
 	run(): number | void;
 
 	work(): number;
@@ -54,9 +64,9 @@ interface ITask extends protoTask {
 	finish(): void;
 }
 
-interface CreepMemory {
-	task: protoTask | null;
-}
+// interface CreepMemory {
+// 	task: protoTask | null;
+// }
 
 interface Creep {
 	task: ITask | null;

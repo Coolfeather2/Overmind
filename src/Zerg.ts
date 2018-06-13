@@ -2,6 +2,8 @@ import {profile} from './profiler/decorator';
 import {Colony} from './Colony';
 import {Overlord} from './overlords/Overlord';
 import {Task} from './tasks/Task';
+import {ManagerSetup} from './overlords/core/manager';
+import {QueenSetup} from './overlords/core/queen';
 
 
 interface ParkingOptions {
@@ -21,13 +23,17 @@ export class Zerg {
 	hitsMax: number;					// |
 	id: string;							// |
 	memory: CreepMemory;				// | See the ICreepMemory interface for structure
+	// my: boolean;						// |
 	name: string;						// |
+	// owner: Owner; 						// |
 	pos: RoomPosition;					// |
 	ref: string;						// |
 	roleName: string;					// |
 	room: Room;							// |
+	saying: string;						// |
 	spawning: boolean;					// |
 	ticksToLive: number | undefined;	// |
+	lifetime: number;
 	actionLog: { [actionName: string]: boolean }; // Tracks the actions that a creep has completed this tick
 	// settings: any;					// Adjustable settings object, can vary across roles
 	private _task: Task | null; 		// Cached Task object that is instantiated once per tick and on change
@@ -42,13 +48,17 @@ export class Zerg {
 		this.hitsMax = creep.hitsMax;
 		this.id = creep.id;
 		this.memory = creep.memory;
+		// this.my = creep.my;
 		this.name = creep.name;
+		// this.owner = creep.owner;
 		this.pos = creep.pos;
 		this.ref = creep.ref;
 		this.roleName = creep.memory.role;
 		this.room = creep.room;
+		this.saying = creep.saying;
 		this.spawning = creep.spawning;
 		this.ticksToLive = creep.ticksToLive;
+		this.lifetime = this.getBodyparts(CLAIM) > 0 ? CREEP_CLAIM_LIFE_TIME : CREEP_LIFE_TIME;
 		this.actionLog = {};
 		// this.settings = {};
 	}
@@ -57,89 +67,115 @@ export class Zerg {
 
 	attack(target: Creep | Structure) {
 		let result = this.creep.attack(target);
-		this.actionLog.attack = (result == OK);
+		if (!this.actionLog.attack) this.actionLog.attack = (result == OK);
 		return result;
 	}
 
 	attackController(controller: StructureController) {
 		let result = this.creep.attackController(controller);
-		this.actionLog.attackController = (result == OK);
+		if (!this.actionLog.attackController) this.actionLog.attackController = (result == OK);
 		return result;
 	}
 
 	build(target: ConstructionSite) {
 		let result = this.creep.build(target);
-		this.actionLog.build = (result == OK);
+		if (!this.actionLog.build) this.actionLog.build = (result == OK);
 		return result;
+	}
+
+	cancelOrder(methodName: string): OK | ERR_NOT_FOUND {
+		console.log('NOT IMPLEMENTED');
+		return ERR_NOT_FOUND;
 	}
 
 	claimController(controller: StructureController) {
 		let result = this.creep.claimController(controller);
-		this.actionLog.claimController = (result == OK);
+		if (!this.actionLog.claimController) this.actionLog.claimController = (result == OK);
 		return result;
 	}
 
 	dismantle(target: Structure): CreepActionReturnCode {
 		let result = this.creep.dismantle(target);
-		this.actionLog.dismantle = (result == OK);
+		if (!this.actionLog.dismantle) this.actionLog.dismantle = (result == OK);
 		return result;
 	}
 
 	drop(resourceType: ResourceConstant, amount?: number) {
 		let result = this.creep.drop(resourceType, amount);
-		this.actionLog.drop = (result == OK);
+		if (!this.actionLog.drop) this.actionLog.drop = (result == OK);
 		return result;
+	}
+
+	generateSafeMode(target: StructureController) {
+		return this.creep.generateSafeMode(target);
 	}
 
 	harvest(source: Source | Mineral) {
 		let result = this.creep.harvest(source);
-		this.actionLog.harvest = (result == OK);
+		if (!this.actionLog.harvest) this.actionLog.harvest = (result == OK);
 		return result;
 	}
 
 	move(direction: DirectionConstant) {
 		let result = this.creep.move(direction);
-		this.actionLog.move = (result == OK);
+		if (!this.actionLog.move) this.actionLog.move = (result == OK);
 		return result;
+	}
+
+	moveByPath(path: PathStep[] | RoomPosition[] | string) {
+		let result = this.creep.moveByPath(path);
+		if (!this.actionLog.move) this.actionLog.move = (result == OK);
+		return result;
+	}
+
+	moveTo(target: RoomPosition | { pos: RoomPosition }, opts?: MoveToOpts) {
+		let result = this.creep.moveTo(target, opts);
+		if (!this.actionLog.move) this.actionLog.move = (result == OK);
+		return result;
+	}
+
+	notifyWhenAttacked(enabled: boolean) {
+		return this.creep.notifyWhenAttacked(enabled);
 	}
 
 	pickup(resource: Resource) {
 		let result = this.creep.pickup(resource);
-		this.actionLog.pickup = (result == OK);
+		if (!this.actionLog.pickup) this.actionLog.pickup = (result == OK);
 		return result;
 	}
 
 	rangedAttack(target: Creep | Structure) {
 		let result = this.creep.rangedAttack(target);
-		this.actionLog.rangedAttack = (result == OK);
+		if (!this.actionLog.rangedAttack) this.actionLog.rangedAttack = (result == OK);
 		return result;
 	}
 
 	rangedMassAttack() {
 		let result = this.creep.rangedMassAttack();
-		this.actionLog.rangedMassAttack = (result == OK);
+		if (!this.actionLog.rangedMassAttack) this.actionLog.rangedMassAttack = (result == OK);
 		return result;
 	}
 
 	repair(target: Structure) {
 		let result = this.creep.repair(target);
-		this.actionLog.repair = (result == OK);
+		if (!this.actionLog.repair) this.actionLog.repair = (result == OK);
 		return result;
 	}
 
 	reserveController(controller: StructureController) {
 		let result = this.creep.reserveController(controller);
-		this.actionLog.reserveController = (result == OK);
+		if (!this.actionLog.reserveController) this.actionLog.reserveController = (result == OK);
 		return result;
 	}
 
+	/* Say a message; maximum message length is 10 characters */
 	say(message: string, pub?: boolean) {
 		return this.creep.say(message, pub);
 	}
 
 	signController(target: StructureController, text: string) {
 		let result = this.creep.signController(target, text);
-		this.actionLog.signController = (result == OK);
+		if (!this.actionLog.signController) this.actionLog.signController = (result == OK);
 		return result;
 	}
 
@@ -149,7 +185,13 @@ export class Zerg {
 
 	upgradeController(controller: StructureController) {
 		let result = this.creep.upgradeController(controller);
-		this.actionLog.upgradeController = (result == OK);
+		if (!this.actionLog.upgradeController) this.actionLog.upgradeController = (result == OK);
+		// Determine amount of upgrade power
+		// let weightedUpgraderParts = _.map(this.boostCounts, )
+		// let upgradeAmount = this.getActiveBodyparts(WORK) * UPGRADE_CONTROLLER_POWER;
+		// let upgrade
+
+		// Stats.accumulate(`colonies.${this.colony.name}.rcl.progressTotal`, upgradeAmount);
 		return result;
 	}
 
@@ -163,7 +205,7 @@ export class Zerg {
 		} else {
 			result = this.creep.heal(target);
 		}
-		this.actionLog.heal = (result == OK);
+		if (!this.actionLog.heal) this.actionLog.heal = (result == OK);
 		return result;
 	}
 
@@ -174,24 +216,24 @@ export class Zerg {
 		} else {
 			result = this.creep.rangedHeal(target);
 		}
-		this.actionLog.rangedHeal = (result == OK);
+		if (!this.actionLog.rangedHeal) this.actionLog.rangedHeal = (result == OK);
 		return result;
 	}
 
 	transfer(target: Creep | Zerg | Structure, resourceType: ResourceConstant, amount?: number) {
-		let result;
+		let result: ScreepsReturnCode;
 		if (target instanceof Zerg) {
 			result = this.creep.transfer(target.creep, resourceType, amount);
 		} else {
 			result = this.creep.transfer(target, resourceType, amount);
 		}
-		this.actionLog.transfer = (result == OK);
+		if (!this.actionLog.transfer) this.actionLog.transfer = (result == OK);
 		return result;
 	}
 
 	withdraw(target: Structure, resourceType: ResourceConstant, amount?: number) {
 		let result = this.creep.withdraw(target, resourceType, amount);
-		this.actionLog.withdraw = (result == OK);
+		if (!this.actionLog.withdraw) this.actionLog.withdraw = (result == OK);
 		return result;
 	}
 
@@ -207,7 +249,7 @@ export class Zerg {
 			['rangedAttack', 'rangedMassAttack', 'build', 'repair', 'rangedHeal'],
 			// ['upgradeController', 'build', 'repair', 'withdraw', 'transfer', 'drop'],
 		];
-		let conflictingActions: string[] = [];
+		let conflictingActions: string[] = [actionName];
 		for (let pipeline of pipelines) {
 			if (pipeline.includes(actionName)) conflictingActions = conflictingActions.concat(pipeline);
 		}
@@ -245,10 +287,7 @@ export class Zerg {
 
 	get needsBoosts(): boolean {
 		if (this.overlord) {
-			let neededBoosts = this.overlord.boosts[this.roleName];
-			if (neededBoosts) {
-				return _.difference(neededBoosts, this.boosts).length > 0;
-			}
+			return this.overlord.shouldBoost(this);
 		}
 		return false;
 	}
@@ -348,49 +387,51 @@ export class Zerg {
 
 	/* Colony that the creep belongs to. */
 	get colony(): Colony {
-		return Overmind.Colonies[this.memory.colony];
+		return Overmind.colonies[this.memory.colony];
 	}
 
 	set colony(newColony: Colony) {
 		this.memory.colony = newColony.name;
 	}
 
-	/* Return the maximum (not remaining) lifetime of the creep */
-	get lifetime(): number {
-		if (this.getBodyparts(CLAIM) > 0) {
-			return CREEP_CLAIM_LIFE_TIME;
-		} else {
-			return CREEP_LIFE_TIME;
-		}
-	}
-
-	/* The average movespeed of the creep on blank terrain */
-	get moveSpeed(): number {
-		if (!this.memory.data.moveSpeed) {
-			let massiveParts = [WORK, ATTACK, RANGED_ATTACK, HEAL, TOUGH];
-			let mass = 0;
-			for (let part of massiveParts) {
-				mass += this.getActiveBodyparts(part);
-			}
-			let moveParts = this.getActiveBodyparts(MOVE);
-			let fatiguePerTick = 2 * mass;
-			if (fatiguePerTick == 0) {
-				this.memory.data.moveSpeed = 1;
-			} else {
-				this.memory.data.moveSpeed = Math.min(2 * moveParts / fatiguePerTick, 1);
-			}
-		}
-		return this.memory.data.moveSpeed;
-	}
+	// /* The average movespeed of the creep on blank terrain */
+	// get moveSpeed(): number {
+	// 	if (!this.memory.data.moveSpeed) {
+	// 		let massiveParts = [WORK, ATTACK, RANGED_ATTACK, HEAL, TOUGH];
+	// 		let mass = 0;
+	// 		for (let part of massiveParts) {
+	// 			mass += this.getActiveBodyparts(part);
+	// 		}
+	// 		let moveParts = this.getActiveBodyparts(MOVE);
+	// 		let fatiguePerTick = 2 * mass;
+	// 		if (fatiguePerTick == 0) {
+	// 			this.memory.data.moveSpeed = 1;
+	// 		} else {
+	// 			this.memory.data.moveSpeed = Math.min(2 * moveParts / fatiguePerTick, 1);
+	// 		}
+	// 	}
+	// 	return this.memory.data.moveSpeed;
+	// }
 
 	// Movement and location -------------------------------------------------------------------------------------------
 
-	travelTo(destination: RoomPosition | { pos: RoomPosition }, options?: any) {
-		return this.creep.travelTo(destination, options);
+	travelTo(destination: RoomPosition | { pos: RoomPosition }, options: TravelToOptions = {}) {
+		// Add default obstacle avoidance
+		let result = this.creep.travelTo(destination, _.merge(options, {obstacles: this.getObstacles()}));
+		if (!this.actionLog.move) this.actionLog.move = (result == OK);
+		return result;
 	};
 
 	inSameRoomAs(target: HasPos): boolean {
 		return (this.pos.roomName == target.pos.roomName);
+	}
+
+	getObstacles(): RoomPosition[] {
+		if (this.roleName == ManagerSetup.role || this.roleName == QueenSetup.role) {
+			return [];
+		} else {
+			return this.colony.obstacles;
+		}
 	}
 
 	park(pos: RoomPosition = this.pos, maintainDistance = false): number {
@@ -421,6 +462,15 @@ export class Zerg {
 		return this.travelTo(pos);
 	}
 
+	/* Moves a creep off of the current tile to the first available neighbor */
+	moveOffCurrentPos(): ScreepsReturnCode | undefined {
+		let destinationPos = _.first(_.filter(this.pos.availableNeighbors(), pos => !pos.isEdge));
+		if (destinationPos) {
+			return this.move(this.pos.getDirectionTo(destinationPos));
+		}
+	}
+
+	/* Moves onto an exit tile */
 	moveOnExit(): ScreepsReturnCode | undefined {
 		if (this.pos.rangeToEdge > 0 && this.fatigue == 0) {
 			let directions = [1, 3, 5, 7, 2, 4, 6, 8] as DirectionConstant[];
@@ -437,6 +487,7 @@ export class Zerg {
 		}
 	}
 
+	/* Moves off of an exit tile */
 	moveOffExit(avoidSwamp = true): ScreepsReturnCode {
 		let swampDirection;
 		let directions = [1, 3, 5, 7, 2, 4, 6, 8] as DirectionConstant[];
@@ -466,6 +517,16 @@ export class Zerg {
 		if (detour) {
 			this.travelTo(pos, {ignoreCreeps: false});
 		}
+	}
+
+	// Miscellaneous fun stuff -----------------------------------------------------------------------------------------
+
+	sayLoop(messageList: string[], pub?: boolean) {
+		return this.say(messageList[Game.time % messageList.length], pub);
+	}
+
+	sayRandom(phrases: string[], pub?: boolean) {
+		return this.say(phrases[Math.floor(Math.random() * phrases.length)], pub);
 	}
 
 }

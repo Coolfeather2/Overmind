@@ -1,8 +1,7 @@
-/**
- * To start using Traveler, require it in main.js:
- * Example: var Traveler = require('Traveler.js');
- */
 import {profile} from '../../profiler/decorator';
+import {log} from '../logger/log';
+
+export const NO_ACTION = -20;
 
 @profile
 export class Traveler {
@@ -46,7 +45,7 @@ export class Traveler {
 		// manage case where creep is nearby destination
 		let rangeToDestination = creep.pos.getRangeTo(destination);
 		if (options.range && rangeToDestination <= options.range) {
-			return OK;
+			return NO_ACTION;
 		} else if (rangeToDestination <= 1) {
 			if (rangeToDestination === 1 && !options.range) {
 				let direction = creep.pos.getDirectionTo(destination);
@@ -56,13 +55,13 @@ export class Traveler {
 				}
 				return creep.move(direction);
 			}
-			return OK;
+			return NO_ACTION;
 		}
 
 		// initialize data object
 		if (!creep.memory._trav) {
-			delete creep.memory._travel;
-			creep.memory._trav = {};
+			// delete creep.memory._travel;
+			creep.memory._trav = {} as TravelData;
 		}
 		let travelData = creep.memory._trav as TravelData;
 
@@ -119,10 +118,10 @@ export class Traveler {
 
 			let cpuUsed = Game.cpu.getUsed() - cpu;
 			state.cpu = _.round(cpuUsed + state.cpu);
-			if (state.cpu > REPORT_CPU_THRESHOLD) {
+			if (Game.time % 10 == 0 && state.cpu > REPORT_CPU_THRESHOLD) {
 				// see note at end of file for more info on this
-				console.log(`TRAVELER: heavy cpu use: ${creep.name}, cpu: ${state.cpu} origin: ${
-								creep.pos}, dest: ${destination}`);
+				log.alert(`TRAVELER: heavy cpu use: ${creep.name}, cpu: ${state.cpu} origin: ${
+							  creep.pos.print}, dest: ${destination.print}`);
 			}
 
 			let color = 'orange';
@@ -267,7 +266,7 @@ export class Traveler {
 			ignoreCreeps: true,
 			maxOps      : DEFAULT_MAXOPS,
 			range       : 1,
-			ensurePath  : true
+			// ensurePath  : true
 		});
 
 		if (options.movingTarget) {
@@ -358,11 +357,11 @@ export class Traveler {
 				// can happen for situations where the creep would have to take an uncommonly indirect path
 				// options.allowedRooms and options.routeCallback can also be used to handle this situation
 				if (roomDistance <= 2) {
-					console.log(`TRAVELER: path failed without findroute, trying with options.useFindRoute = true`);
-					console.log(`from: ${origin}, destination: ${destination}`);
+					log.warning(`TRAVELER: path failed without findroute. Origin: ${origin.print}, ` +
+								`destination: ${destination.print}. Trying again with options.useFindRoute = true...`);
 					options.useFindRoute = true;
 					ret = this.findTravelPath(origin, destination, options);
-					console.log(`TRAVELER: second attempt was ${ret.incomplete ? 'not ' : ''}successful`);
+					log.warning(`TRAVELER: second attempt was ${ret.incomplete ? 'not ' : ''}successful`);
 					return ret;
 				}
 
@@ -521,7 +520,7 @@ export class Traveler {
 		let impassibleStructures: Structure[] = [];
 		for (let structure of room.find<Structure>(FIND_STRUCTURES)) {
 			if (structure instanceof StructureRampart) {
-				if (!structure.my && !structure.isPublic) {
+				if (!structure.my /*&& !structure.isPublic*/) {
 					impassibleStructures.push(structure);
 				}
 			} else if (structure instanceof StructureRoad) {

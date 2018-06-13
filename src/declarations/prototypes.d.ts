@@ -2,7 +2,8 @@ interface Creep {
 	memory: CreepMemory;
 	boosts: _ResourceConstantSansEnergy[];
 	boostCounts: { [boostType: string]: number };
-	travelTo(destination: RoomPosition | { pos: RoomPosition }, options?: any): number;
+
+	travelTo(destination: RoomPosition | { pos: RoomPosition }, options?: TravelToOptions): number;
 }
 
 interface Flag {
@@ -24,10 +25,13 @@ interface Room {
 	signedByMe: boolean;
 	creeps: Creep[];
 	hostiles: Creep[];
+	dangerousHostiles: Creep[];
 	playerHostiles: Creep[];
+	dangerousPlayerHostiles: Creep[];
 	hostileStructures: Structure[];
 	flags: Flag[];
 	// Preprocessed structures
+	tombstones: Tombstone[];
 	drops: { [resourceType: string]: Resource[] };
 	droppedEnergy: Resource[];
 	droppedMinerals: Resource[];
@@ -35,19 +39,24 @@ interface Room {
 	structures: { [structureType: string]: Structure[] };
 	spawns: StructureSpawn[];
 	extensions: StructureExtension[];
+	extractor: StructureExtractor | undefined;
 	containers: StructureContainer[];
 	storageUnits: StorageUnit[];
 	towers: StructureTower[];
 	links: StructureLink[];
 	labs: StructureLab[];
 	sources: Source[];
+	mineral: Mineral | undefined;
+	keeperLairs: StructureKeeperLair[];
 	roads: StructureRoad[];
 	// sinks: Sink[];
 	repairables: Structure[];
 	constructionSites: ConstructionSite[];
-	structureSites: ConstructionSite[];
-	roadSites: ConstructionSite[];
+	// structureSites: ConstructionSite[];
+	// roadSites: ConstructionSite[];
 	barriers: (StructureWall | StructureRampart)[];
+	ramparts: StructureRampart[];
+	walls: StructureWall[];
 
 	getStructures(structureType: string): Structure[];
 
@@ -66,7 +75,9 @@ interface RoomObject {
 
 interface RoomPosition {
 	print: string;
+	room: Room | undefined;
 	name: string;
+	coordName: string;
 	isEdge: boolean;
 	isVisible: boolean;
 	rangeToEdge: number;
@@ -74,6 +85,9 @@ interface RoomPosition {
 	neighbors: RoomPosition[];
 	// adjacentSpots: RoomPosition[];
 	// availableAdjacentSpots: RoomPosition[];
+	getPositionsAtRange(range: number, includeWalls?: boolean, includeEdges?: boolean): RoomPosition[];
+
+	getPositionsInRange(range: number, includeWalls?: boolean, includeEdges?: boolean): RoomPosition[];
 
 	lookForStructure(structureType: StructureConstant): Structure | undefined;
 
@@ -88,7 +102,9 @@ interface RoomPosition {
 	findClosestByLimitedRange<T>(objects: T[] | RoomPosition[], rangeLimit: number,
 								 opts?: { filter: any | string; }): T;
 
-	findClosestByMultiRoomRange<T extends _HasRoomPosition>(objects: T[], opts?: { filter: any | string; }): T;
+	findClosestByMultiRoomRange<T extends _HasRoomPosition>(objects: T[]): T;
+
+	findClosestByRangeThenPath<T extends _HasRoomPosition>(objects: T[]): T;
 }
 
 interface RoomVisual {
@@ -108,7 +124,7 @@ interface RoomVisual {
 }
 
 interface Structure {
-	isPassible: boolean;
+	blocksMovement: boolean;
 }
 
 interface StructureContainer {
@@ -120,6 +136,7 @@ interface StructureContainer {
 interface StructureController {
 	reservedByMe: boolean;
 	signedByMe: boolean;
+	signedByScreeps: boolean;
 
 	needsReserving(reserveBuffer: number): boolean;
 }
@@ -157,6 +174,7 @@ interface StructureTerminal {
 	energy: any;
 	isFull: boolean;
 	isEmpty: boolean;
+	// _send(resourceType: ResourceConstant, amount: number, destination: string, description?: string): ScreepsReturnCode;
 }
 
 interface StructureTower {
@@ -174,6 +192,10 @@ interface StructureTower {
 	// preventRampartDecay(): number;
 }
 
+interface Tombstone {
+	energy: number;
+}
+
 interface String {
 	padRight(length: number, char?: string): string;
 
@@ -182,4 +204,6 @@ interface String {
 
 interface Number {
 	toPercent(decimals?: number): string;
+
+	truncate(decimals: number): number;
 }

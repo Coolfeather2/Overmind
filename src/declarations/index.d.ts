@@ -3,9 +3,12 @@ declare var global: any;
 
 declare namespace NodeJS {
 	interface Global {
+
+		__VERSION__: string;
+
 		Overmind: IOvermind;
-		log: any;
-		Profiler: any;
+
+		print(...args: any[]): void;
 
 		deref(ref: string): RoomObject | null;
 
@@ -13,45 +16,13 @@ declare namespace NodeJS {
 	}
 }
 
+declare module 'screeps-profiler'; // I stopped using the typings for this because it was fucking up the Game typings
+
+// If TS2451 gets thrown, change "declare let Game: Game;" to "declare var Game: Game;"
+// in typed-screeps index.d.ts file. (See issue #61 until the package is updated)
 interface Game {
 	zerg: { [name: string]: any };
 	directives: { [name: string]: any };
-	profiler: ScreepsGameProfiler;
-}
-
-
-interface ScreepsGameProfiler {
-
-	profile(ticks: number, functionFilter?: string): void;
-
-	stream(ticks: number, functionFilter?: string): void;
-
-	email(ticks: number, functionFilter?: string): void;
-
-	background(functionFilter?: string): void;
-
-	output(lineCount?: number): void;
-
-	reset(): void;
-
-	restart(): void;
-}
-
-interface ScreepsProfilerStatic {
-
-
-}
-
-declare module 'screeps-profiler' {
-	export function enable(): void;
-
-	export function wrap(callback: Function): Function;
-
-	export function registerClass(constructor: Function, className: string): void;
-
-	export function registerObject(object: any, objectName: string): void;
-
-	export function registerFN(fn: Function, fnName?: string): Function;
 }
 
 
@@ -60,8 +31,8 @@ interface ICache {
 	targets: { [ref: string]: string[] };
 	structures: { [roomName: string]: { [structureType: string]: Structure[] } };
 	constructionSites: { [roomName: string]: ConstructionSite[] };
-	structureSites: { [roomName: string]: ConstructionSite[] };
-	roadSites: { [roomName: string]: ConstructionSite[] };
+	// structureSites: { [roomName: string]: ConstructionSite[] };
+	// roadSites: { [roomName: string]: ConstructionSite[] };
 	drops: { [roomName: string]: { [resourceType: string]: Resource[] } };
 
 	build(): void;
@@ -71,16 +42,19 @@ interface ICache {
 
 interface IOvermindMemory {
 	terminalNetwork: any;
+	versionUpdater: any;
 }
 
 interface IOvermind {
 	cache: ICache;
-	Colonies: { [roomName: string]: any };
+	colonies: { [roomName: string]: any };
 	overlords: { [overlordName: string]: any };
 	colonyMap: { [roomName: string]: string };
 	invisibleRooms: string[];
 	memory: IOvermindMemory;
 	terminalNetwork: ITerminalNetwork;
+	tradeNetwork: ITradeNetwork;
+
 	build(): void;
 
 	// rebuild(): void;
@@ -93,14 +67,28 @@ interface IOvermind {
 }
 
 interface ITerminalNetwork {
-	// terminals: StructureTerminal[];
+	terminals: StructureTerminal[];
 	memory: any;
 
-	requestResource(resourceType: ResourceConstant, terminal: StructureTerminal, amount?: number): void;
+	requestResource(terminal: StructureTerminal, resourceType: ResourceConstant, amount: number): void;
 
 	init(): void;
 
 	run(): void;
+}
+
+interface ITradeNetwork {
+	memory: any;
+
+	priceOf(mineralType: ResourceConstant): number
+
+	lookForGoodDeals(terminal: StructureTerminal, mineral: string, margin?: number): void;
+
+	sellDirectly(terminal: StructureTerminal, resource: ResourceConstant, amount?: number): void;
+
+	sell(terminal: StructureTerminal, resource: ResourceConstant, amount?: number): void;
+
+	buyMineral(terminal: StructureTerminal, mineralType: ResourceConstant, amount: number): void;
 }
 
 declare var Overmind: IOvermind;
@@ -115,10 +103,6 @@ interface RoomCoord {
 	y: number;
 	xDir: string;
 	yDir: string;
-}
-
-interface StructureMap {
-	[structureType: string]: RoomPosition[];
 }
 
 interface protoCreep {
@@ -146,4 +130,8 @@ interface protoPos {
 interface HasPos {
 	pos: RoomPosition
 }
+
+// interface StoreLike {
+// 	[resourceType: string]: number
+// }
 

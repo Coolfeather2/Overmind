@@ -1,11 +1,28 @@
 // Random utilities that don't belong anywhere else
 
+export function minMax(value: number, min: number, max: number): number {
+	return Math.max(Math.min(value, max), min);
+}
+
+export function getUsername(): string {
+	for (let i in Game.rooms) {
+		let room = Game.rooms[i];
+		if (room.controller && room.controller.my) {
+			return room.controller.owner.username;
+		}
+	}
+	console.log('ERROR: Could not determine username. You can set this manually in src/settings/settings_user');
+	return 'ERROR: Could not determine username.';
+}
+
+import lodashMinBy from 'lodash.minby';
+
 interface toColumnsOpts {
 	padChar: string,
 	justify: boolean
 }
 
-/* Create column-aligned text array from object with string key/values*/
+/* Create column-aligned text array from object with string key/values */
 export function toColumns(obj: { [key: string]: string }, opts = {} as toColumnsOpts): string[] {
 	_.defaults(opts, {
 		padChar: ' ',	// Character to pad with, e.g. "." would be key........val
@@ -27,4 +44,31 @@ export function toColumns(obj: { [key: string]: string }, opts = {} as toColumns
 	return ret;
 }
 
-// export function timeIt()
+/* Merges a list of store-like objects, summing overlapping keys. Useful for calculating assets from multiple sources */
+export function mergeSum(objects: { [key: string]: number | undefined }[]): { [key: string]: number } {
+	let ret: { [key: string]: number } = {};
+	for (let object of objects) {
+		for (let key in object) {
+			let amount = object[key] || 0;
+			if (!ret[key]) {
+				ret[key] = 0;
+			}
+			ret[key] += amount;
+		}
+	}
+	return ret;
+}
+
+export function derefCoords(coordName: string, roomName: string): RoomPosition {
+	let [x, y] = coordName.split(':');
+	return new RoomPosition(parseInt(x, 10), parseInt(y, 10), roomName);
+}
+
+export function minBy<T>(objects: T[], iteratee: ((obj: T) => number)): T {
+	return lodashMinBy(objects, iteratee);
+}
+
+export function maxBy<T>(objects: T[], iteratee: ((obj: T) => number)): T {
+	let maxByIteratee: ((obj: T) => number) = (obj => -1 * iteratee(obj));
+	return lodashMinBy(objects, maxByIteratee);
+}

@@ -1,11 +1,13 @@
 // Overseer: coordinates creep actions and spawn requests related to a common objective
 
-import {CreepSetup} from '../creepSetup/CreepSetup';
+import {CreepSetup} from './CreepSetup';
 import {profile} from '../profiler/decorator';
 import {Pathing} from '../pathing/pathing';
 import {Colony} from '../Colony';
 import {Zerg} from '../Zerg';
-import {TaskGetBoosted} from '../tasks/task_getBoosted';
+import {Tasks} from '../tasks/Tasks';
+import {boostParts} from '../resources/map_resources';
+import {MIN_LIFETIME_FOR_BOOST} from '../tasks/instances/getBoosted';
 import {log} from '../lib/logger/log';
 
 export interface IOverlordInitializer {
@@ -27,11 +29,11 @@ export abstract class Overlord {
 	colony: Colony;
 	protected _creeps: { [roleName: string]: Zerg[] };
 	creepUsageReport: { [role: string]: [number, number] | undefined };
-	memory: OverlordMemory;
+	// memory: OverlordMemory;
 	boosts: { [roleName: string]: _ResourceConstantSansEnergy[] | undefined };
 
 	constructor(initializer: IOverlordInitializer, name: string, priority: number) {
-		this.initMemory(initializer);
+		// this.initMemory(initializer);
 		this.name = name;
 		this.room = initializer.room;
 		this.priority = priority;
@@ -46,9 +48,21 @@ export abstract class Overlord {
 		Overmind.overlords[this.ref] = this;
 	}
 
+	/* Refreshes portions of the overlord state */
+	rebuild(): void {
+		this.recalculateCreeps();
+		this.creepUsageReport = _.mapValues(this._creeps, creep => undefined);
+	}
+
 	recalculateCreeps(): void {
 		this._creeps = _.mapValues(Overmind.cache.overlords[this.ref],
 								   creepsOfRole => _.map(creepsOfRole, creepName => Game.zerg[creepName]));
+	}
+
+	debug(creep: Zerg, targetCreepName: string, ...args: any[]) {
+		if (creep.name == targetCreepName) {
+			console.log(JSON.stringify(args));
+		}
 	}
 
 	/* Gets the "ID" of the outpost this overlord is operating in. 0 for owned rooms, >= 1 for outposts, -1 for other */
@@ -63,6 +77,7 @@ export abstract class Overlord {
 		for (let creep of idleCreeps) {
 			creep.overlord = this;
 		}
+		this.recalculateCreeps();
 	}
 
 	protected creeps(role: string): Zerg[] {
@@ -73,18 +88,16 @@ export abstract class Overlord {
 		}
 	}
 
-	protected creepReport(role: string, currentAmt: number, neededAmt: number) {
-		this.creepUsageReport[role] = [currentAmt, neededAmt];
+	protected allCreeps(): Zerg[] {
+		let allCreeps: Zerg[] = [];
+		for (let role of _.keys(this._creeps)) {
+			allCreeps = allCreeps.concat(this._creeps[role]);
+		}
+		return _.compact(allCreeps);
 	}
 
-	protected initMemory(initializer: IOverlordInitializer): void {
-		if (!initializer.memory.overlords) {
-			initializer.memory.overlords = {};
-		}
-		if (!initializer.memory.overlords[this.name]) {
-			initializer.memory.overlords[this.name] = {};
-		}
-		this.memory = initializer.memory.overlords[this.name];
+	protected creepReport(role: string, currentAmt: number, neededAmt: number) {
+		this.creepUsageReport[role] = [currentAmt, neededAmt];
 	}
 
 	/* Generate (but not spawn) the largest creep possible, returns the protoCreep as an object */
@@ -99,16 +112,13 @@ export abstract class Overlord {
 		// Generate the creep memory
 		let creepMemory: CreepMemory = {
 			colony  : this.colony.name, 						// name of the colony the creep is assigned to
-			overlord: this.ref,								// name of the overseer running this creep
+			overlord: this.ref,									// name of the Overlord running this creep
 			role    : setup.role,								// role of the creep
 			task    : null, 									// task the creep is performing
 			data    : { 										// rarely-changed data about the creep
-				origin   : '',										// where it was spawned, filled in at spawn time
-				replaceAt: 0, 										// when it should be replaced
-				boosts   : {} 										// keeps track of what boosts creep has/needs
+				origin: '',										// where it was spawned, filled in at spawn time
 			},
 			_trav   : null,
-			_travel : null,
 		};
 		// Create the protocreep and return it
 		let protoCreep: protoCreep = { 							// object to add to spawner queue
@@ -123,6 +133,7 @@ export abstract class Overlord {
 	// TODO: include creep move speed
 	lifetimeFilter(creeps: Zerg[], prespawn = 50): Zerg[] {
 		let spawnDistance = 0;
+		// TODO: account for creeps that can be spawned at incubatee's hatchery
 		if (this.colony.incubator) {
 			spawnDistance = Pathing.distance(this.pos, this.colony.incubator.hatchery!.pos) || 0;
 		} else if (this.colony.hatchery) {
@@ -135,6 +146,29 @@ export abstract class Overlord {
 		// See: https://screeps.com/forum/topic/443/creep-spawning-is-not-updated-correctly-after-spawn-process
 		return _.filter(creeps, creep => creep.ticksToLive! > 3 * creep.body.length + spawnDistance + prespawn ||
 										 creep.spawning || (!creep.spawning && !creep.ticksToLive));
+	}
+
+	parkCreepsIfIdle(creeps: Zerg[], outsideHatchery = true) {
+		for (let creep of creeps) {
+			if (!creep) {
+				console.log(`creeps: ${_.map(creeps, creep => creep.name)}`);
+				continue;
+			}
+			if (creep.isIdle && creep.canExecute('move')) {
+				if (this.colony.hatchery) {
+					let hatcheryRestrictedRange = 6;
+					if (creep.pos.getRangeTo(this.colony.hatchery.pos) < hatcheryRestrictedRange) {
+						let hatcheryBorder = this.colony.hatchery.pos.getPositionsAtRange(hatcheryRestrictedRange);
+						let moveToPos = creep.pos.findClosestByRange(hatcheryBorder);
+						creep.travelTo(moveToPos);
+					} else {
+						creep.park();
+					}
+				} else {
+					creep.park();
+				}
+			}
+		}
 	}
 
 	/* Create a creep setup and enqueue it to the Hatchery; does not include automatic reporting */
@@ -153,41 +187,60 @@ export abstract class Overlord {
 		this.creepReport(setup.role, creepQuantity, quantity);
 	}
 
-	protected handleBoosts(creep: Zerg): void {
-		let neededBoosts = this.boosts[creep.roleName];
-		if (neededBoosts) {
-			let remainingBoosts = _.difference(neededBoosts, creep.boosts);
-			let boost = _.first(remainingBoosts);
-			if (boost && this.colony.labs.length > 0) {
-				let labsContainingBoost = _.filter(this.colony.labs, lab => lab.mineralType == boost);
-				let lab = _.first(labsContainingBoost);
-				if (lab) {
-					creep.task = new TaskGetBoosted(lab);
-				} else {
-					log.info(`No labs containing ${boost} are in ${this.colony.name}!`);
-				}
+	shouldBoost(creep: Zerg): boolean {
+		if (!this.colony.evolutionChamber ||
+			(creep.ticksToLive && creep.ticksToLive < MIN_LIFETIME_FOR_BOOST * creep.lifetime)) {
+			return false;
+		}
+		if (this.boosts[creep.roleName]) {
+			let boosts = _.filter(this.boosts[creep.roleName]!,
+								  boost => (creep.boostCounts[boost] || 0)
+										   < creep.getActiveBodyparts(boostParts[boost]));
+			if (boosts.length > 0) {
+				return _.all(boosts, boost => this.colony.evolutionChamber!.canBoost(creep, boost));
+			}
+		}
+		return false;
+	}
+
+	/* Request a boost from the evolution chamber; should be called during init() */
+	protected requestBoostsForCreep(creep: Zerg): void {
+		if (this.colony.evolutionChamber && this.boosts[creep.roleName]) {
+			let boost = _.find(this.boosts[creep.roleName]!,
+							   boost => (creep.boostCounts[boost] || 0) < creep.getActiveBodyparts(boostParts[boost]));
+			if (boost) {
+				this.colony.evolutionChamber.requestBoost(boost, creep);
 			}
 		}
 	}
 
-	protected labsHaveBoosts(): boolean {
-		for (let role in this.boosts) {
-			if (this.boosts[role]) {
-				let boosts = this.boosts[role]!;
-				for (let boost of boosts) {
-					if (_.filter(this.colony.labs, lab => lab.getMineralType() == boost &&
-														  lab.mineralAmount > 0).length == 0) {
-						return false;
+	/* Handle boosting of a creep; should be called during run() */
+	protected handleBoosting(creep: Zerg): void {
+		if (this.colony.evolutionChamber && this.boosts[creep.roleName]) {
+			let boost = _.find(this.boosts[creep.roleName]!,
+							   boost => (creep.boostCounts[boost] || 0) < creep.getActiveBodyparts(boostParts[boost]));
+			if (boost) {
+				if (this.colony.evolutionChamber.queuePosition(creep) == 0) {
+					log.info(`${this.colony.room.print}: boosting ${creep.name}@${creep.pos.print} with ${boost}!`);
+					creep.task = Tasks.getBoosted(this.colony.evolutionChamber.boostingLab, boost);
+				} else {
+					// Approach the lab but don't attempt to get boosted
+					if (creep.pos.getRangeTo(this.colony.evolutionChamber.boostingLab) > 2) {
+						creep.travelTo(this.colony.evolutionChamber.boostingLab, {range: 2});
+					} else {
+						creep.park();
 					}
 				}
 			}
 		}
-		return true;
 	}
 
-	protected requestBoost(resourceType: _ResourceConstantSansEnergy): void {
-		if (this.colony.terminal) {
-			Overmind.terminalNetwork.requestResource(resourceType, this.colony.terminal);
+	/* Request any needed boosts from terminal network; should be called during init() */
+	protected requestBoosts(): void {
+		for (let creep of this.allCreeps()) {
+			if (this.shouldBoost(creep)) {
+				this.requestBoostsForCreep(creep);
+			}
 		}
 	}
 

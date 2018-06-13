@@ -1,20 +1,24 @@
 /* The Overlord object handles most of the task assignment and directs the spawning operations for each Colony. */
 
-import {DirectiveGuard} from './directives/combat/directive_guard';
-import {DirectiveBootstrap, EMERGENCY_ENERGY_THRESHOLD} from './directives/core/directive_bootstrap';
+import {DirectiveGuard} from './directives/defense/guard';
+import {DirectiveBootstrap, EMERGENCY_ENERGY_THRESHOLD} from './directives/core/bootstrap';
 import {profile} from './profiler/decorator';
-import {Colony} from './Colony';
+import {Colony, ColonyStage} from './Colony';
 import {Overlord} from './overlords/Overlord';
 import {Directive} from './directives/Directive';
 import {log} from './lib/logger/log';
 import {Visualizer} from './visuals/Visualizer';
 import {Pathing} from './pathing/pathing';
-import {DirectiveGuardSwarm} from './directives/combat/directive_guard_swarm';
-import {DirectiveInvasionDefense} from './directives/combat/directive_invasion';
+import {DirectiveGuardSwarm} from './directives/defense/guardSwarm';
+import {DirectiveInvasionDefense} from './directives/defense/invasionDefense';
+import {Mem} from './memory';
+import {DirectiveNukeResponse} from './directives/defense/nukeResponse';
+import {DirectiveAbandon} from './directives/colonization/abandon';
+import {MinerSetup} from './overlords/core/miner';
+import {QueenSetup} from './overlords/core/queen';
 
 @profile
 export class Overseer {
-	memory: OverseerMemory; 					// Memory.colony.overseer
 	colony: Colony; 							// Instantiated colony object
 	directives: Directive[];					// Directives across the colony
 	overlords: {
@@ -23,9 +27,12 @@ export class Overseer {
 
 	constructor(colony: Colony) {
 		this.colony = colony;
-		this.memory = colony.memory.overseer;
 		this.directives = [];
 		this.overlords = {};
+	}
+
+	get memory(): OverseerMemory {
+		return Mem.wrap(this.colony.memory, 'overseer', {});
 	}
 
 	registerOverlord(overlord: Overlord): void {
@@ -37,14 +44,34 @@ export class Overseer {
 
 	/* Place new event-driven flags where needed to be instantiated on the next tick */
 	private placeDirectives(): void {
-		// // Register drop pickup requests // TODO: make this cleaner, refactor for tombstones
+		// Bootstrap directive: in the event of catastrophic room crash, enter emergency spawn mode.
+		// Doesn't apply to incubating colonies.
+		if (!this.colony.isIncubating) {
+			let hasEnergy = this.colony.room.energyAvailable >= EMERGENCY_ENERGY_THRESHOLD; // Enough spawn energy?
+			let hasMiners = this.colony.getCreepsByRole(MinerSetup.role).length > 0;		// Has energy supply?
+			let hasQueen = this.colony.getCreepsByRole(QueenSetup.role).length > 0;			// Has a queen?
+			if (!hasEnergy && !hasMiners && !hasQueen && this.colony.hatchery) {
+				DirectiveBootstrap.createIfNotPresent(this.colony.hatchery.pos, 'pos');
+				// this.colony.hatchery.settings.suppressSpawning = true;
+			}
+		}
+
+		// TODO: figure out what's causing these bugs
+		// // Register logistics requests for all dropped resources and tombstones
 		// for (let room of this.colony.rooms) {
-		// 	for (let drop of room.droppedEnergy) {
-		// 		if (drop.amount > 100) {
-		// 			let requesterFlags = _.filter(drop.pos.lookFor(LOOK_FLAGS) || [],
-		// 				flag => DirectiveLogisticsRequest.filter(flag!));
-		// 			if (requesterFlags.length == 0) DirectiveLogisticsRequest.create(drop.pos);
+		// 	// Pick up all nontrivial dropped resources
+		// 	for (let resourceType in room.drops) {
+		// 		for (let drop of room.drops[resourceType]) {
+		// 			if (drop.amount > 200 || drop.resourceType != RESOURCE_ENERGY) {
+		// 				DirectiveLogisticsRequest.createIfNotPresent(drop.pos, 'pos', {quiet: true});
+		// 			}
 		// 		}
+		// 	}
+		// }
+		// // Place a logistics request directive for every tombstone with non-empty store that isn't on a container
+		// for (let tombstone of this.colony.tombstones) {
+		// 	if (_.sum(tombstone.store) > 0 && !tombstone.pos.lookForStructure(STRUCTURE_CONTAINER)) {
+		// 		DirectiveLogisticsRequest.createIfNotPresent(tombstone.pos, 'pos', {quiet: true});
 		// 	}
 		// }
 
@@ -55,39 +82,31 @@ export class Overseer {
 			let defenseFlags = _.filter(room.flags, flag => DirectiveGuard.filter(flag) ||
 															DirectiveInvasionDefense.filter(flag) ||
 															DirectiveGuardSwarm.filter(flag));
-			let bigHostiles = _.filter(room.hostiles, creep => creep.body.length >= 10);
-			// let hostiles = _.filter(room.hostiles, creep => creep.getActiveBodyparts(ATTACK) > 0 ||
-			// 												creep.getActiveBodyparts(WORK) > 0 ||
-			// 												creep.getActiveBodyparts(RANGED_ATTACK) > 0 ||
-			// 												creep.getActiveBodyparts(HEAL) > 0);
-			if ((room.hostiles.length > 0 && defenseFlags.length == 0) ||
-				(bigHostiles.length > 0 && defenseFlags.length == 0)) {
-				DirectiveGuard.create(room.hostiles[0].pos);
+			// let bigHostiles = _.filter(room.hostiles, creep => creep.body.length >= 10);
+			if (room.dangerousHostiles.length > 0 && defenseFlags.length == 0) {
+				DirectiveGuard.create(room.dangerousHostiles[0].pos);
 			}
 		}
 
-		if (this.colony.room) {
-			let effectiveInvaderCount = _.sum(_.map(this.colony.room.hostiles, invader => invader.boosts.length > 0 ? 2 : 1));
-			let invasionDefenseFlags = _.filter(this.colony.room.flags, flag => DirectiveInvasionDefense.filter(flag));
-			if (effectiveInvaderCount >= 3 && invasionDefenseFlags.length == 0) {
-				DirectiveInvasionDefense.create(this.colony.controller.pos);
+		// Defend against invasions in owned rooms
+		if (this.colony.room && this.colony.level >= DirectiveInvasionDefense.requiredRCL) {
+			let effectiveInvaderCount = _.sum(_.map(this.colony.room.hostiles,
+													invader => invader.boosts.length > 0 ? 2 : 1));
+			if (effectiveInvaderCount >= 3) {
+				DirectiveInvasionDefense.createIfNotPresent(this.colony.controller.pos, 'room');
 			}
 		}
 
-
-		// Emergency directive: in the event of catastrophic room crash, enter emergency spawn mode.
-		// Doesn't apply to incubating colonies.
-		if (!this.colony.isIncubating) {
-			let hasEnergy = this.colony.room.energyAvailable >= EMERGENCY_ENERGY_THRESHOLD; // Enough spawn energy?
-			let hasMiners = this.colony.getCreepsByRole('miner').length > 0;		// Has energy supply?
-			let hasQueen = this.colony.getCreepsByRole('queen').length > 0;		// Has a queen?
-			// let canSpawnSupplier = this.colony.room.energyAvailable >= this.colony.overlords.supply.generateProtoCreep()
-			let emergencyFlags = _.filter(this.colony.room.flags, flag => DirectiveBootstrap.filter(flag));
-			if (!hasEnergy && !hasMiners && !hasQueen && emergencyFlags.length == 0) {
-				if (this.colony.hatchery) {
-					DirectiveBootstrap.create(this.colony.hatchery.pos);
-				}
+		// Place nuke response directive if there is a nuke present in colony room
+		if (this.colony.room && this.colony.level >= DirectiveNukeResponse.requiredRCL) {
+			for (let nuke of this.colony.room.find(FIND_NUKES)) {
+				DirectiveNukeResponse.createIfNotPresent(nuke.pos, 'pos');
 			}
+		}
+
+		// Place an abandon directive in case room has been breached to prevent terminal robbing
+		if (this.colony.breached && this.colony.terminal) {
+			DirectiveAbandon.createIfNotPresent(this.colony.terminal.pos, 'room');
 		}
 	}
 
@@ -95,16 +114,24 @@ export class Overseer {
 	// Safe mode condition =============================================================================================
 
 	private handleSafeMode(): void {
-		// Safe mode activates when there are player
-		let creepIsDangerous = (creep: Creep) => (creep.getActiveBodyparts(ATTACK) > 0 ||
-												  creep.getActiveBodyparts(WORK) > 0 ||
-												  creep.getActiveBodyparts(RANGED_ATTACK) > 0);
-		let barrierPositions = _.map(this.colony.room.barriers, barrier => barrier.pos);
-		let baddies = _.filter(this.colony.room.playerHostiles, hostile => creepIsDangerous(hostile));
-		for (let hostile of baddies) {
-			if (this.colony.spawns[0] && Pathing.isReachable(hostile.pos, this.colony.spawns[0].pos,
-															 {obstacles: barrierPositions})) {
+		// Safe mode activates when there are dangerous player hostiles that can reach the spawn
+		let criticalStructures = _.compact([...this.colony.spawns,
+											this.colony.storage,
+											this.colony.terminal]) as Structure[];
+		for (let structure of criticalStructures) {
+			if (structure.hits < structure.hitsMax &&
+				structure.pos.findInRange(this.colony.room.dangerousHostiles, 1).length > 0) {
 				this.colony.controller.activateSafeMode();
+				return;
+			}
+		}
+		if (this.colony.stage > ColonyStage.Larva) {
+			let barriers = _.map(this.colony.room.barriers, barrier => barrier.pos);
+			let firstHostile = _.first(this.colony.room.dangerousHostiles);
+			if (firstHostile && this.colony.spawns[0] &&
+				Pathing.isReachable(firstHostile.pos, this.colony.spawns[0].pos, {obstacles: barriers})) {
+				this.colony.controller.activateSafeMode();
+				return;
 			}
 		}
 	}
@@ -125,8 +152,6 @@ export class Overseer {
 				overlord.init();
 			}
 		}
-		// this.registerObjectives();
-		// this.registerCreepRequests();
 	}
 
 	// Operation =======================================================================================================
@@ -141,9 +166,7 @@ export class Overseer {
 				overlord.run();
 			}
 		}
-		// this.handleFlagOperations();
 		this.handleSafeMode();
-		// this.handleSpawnOperations(); // build creeps as needed
 		this.placeDirectives();
 		// Draw visuals
 		_.forEach(this.directives, directive => directive.visuals());
@@ -158,7 +181,9 @@ export class Overseer {
 				for (let role in overlord.creepUsageReport) {
 					let report = overlord.creepUsageReport[role];
 					if (!report) {
-						log.info(`Role ${role} is not reported by ${overlord.name}!`);
+						if (Game.time % 100 == 0) {
+							log.info(`Role ${role} is not reported by ${overlord.name}!`);
+						}
 					} else {
 						if (!roleOccupancy[role]) roleOccupancy[role] = [0, 0];
 						roleOccupancy[role][0] += report[0];
@@ -167,7 +192,10 @@ export class Overseer {
 				}
 			}
 		}
-		let stringReport: string[] = [`Creep usage for ${this.colony.name}:`];
+		let safeOutposts = _.filter(this.colony.outposts, room => !!room && room.dangerousHostiles.length == 0);
+		let stringReport: string[] = [
+			`DEFCON: ${this.colony.defcon}  Safe outposts: ${safeOutposts.length}/${this.colony.outposts.length}`,
+			`Creep usage for ${this.colony.name}:`];
 		let padLength = _.max(_.map(_.keys(roleOccupancy), str => str.length)) + 2;
 		for (let role in roleOccupancy) {
 			let [current, needed] = roleOccupancy[role];

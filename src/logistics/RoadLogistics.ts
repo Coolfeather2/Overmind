@@ -3,7 +3,7 @@
 import {profile} from '../profiler/decorator';
 import {Colony} from '../Colony';
 import {Zerg} from '../Zerg';
-import {repairTaskName} from '../tasks/task_repair';
+import {repairTaskName} from '../tasks/instances/repair';
 
 
 @profile
@@ -29,7 +29,7 @@ export class RoadLogistics {
 		this._assignedWorkers = {};
 		this.settings = {
 			allowedPaversPerRoom: 1,
-			criticalThreshold   : 0.25, // When the roadnetwork forces a repair request
+			criticalThreshold   : 0.25, // When the roadnetwork forces a repair store
 			repairThreshold     : 0.9
 		};
 		this.cache = {
@@ -38,10 +38,6 @@ export class RoadLogistics {
 			energyToRepave : {}
 		};
 	}
-
-	// get memory(): RoadNetworkMemory {
-	// 	return Mem.wrap(this.colony.memory, 'roadLogistics');
-	// }
 
 	/* Whether a road in the network needs repair */
 	private workerShouldRepaveRoom(worker: Zerg, room: Room): boolean {
@@ -80,7 +76,8 @@ export class RoadLogistics {
 	criticalRoads(room: Room): StructureRoad[] {
 		if (!this.cache.criticalRoads[room.name]) {
 			this.cache.criticalRoads[room.name] = _.filter(room.roads, road =>
-				road.hits < road.hitsMax * this.settings.criticalThreshold);
+				road.hits < road.hitsMax * this.settings.criticalThreshold &&
+				this.colony.roomPlanner.roadShouldBeHere(road.pos));
 		}
 		return this.cache.criticalRoads[room.name];
 	}
@@ -88,16 +85,16 @@ export class RoadLogistics {
 	repairableRoads(room: Room): StructureRoad[] {
 		if (!this.cache.repairableRoads[room.name]) {
 			this.cache.repairableRoads[room.name] = _.filter(room.roads, road =>
-				road.hits < road.hitsMax * this.settings.repairThreshold);
+				road.hits < road.hitsMax * this.settings.repairThreshold &&
+				this.colony.roomPlanner.roadShouldBeHere(road.pos));
 		}
 		return this.cache.repairableRoads[room.name];
 	}
 
-
 	/* Total amount of energy needed to repair all roads in the room */
 	energyToRepave(room: Room): number {
 		if (!this.cache.energyToRepave[room.name]) {
-			this.cache.energyToRepave[room.name] = _.sum(_.map(room.roads,
+			this.cache.energyToRepave[room.name] = _.sum(_.map(this.repairableRoads(room),
 															   road => (road.hitsMax - road.hits) / REPAIR_POWER));
 		}
 		return this.cache.energyToRepave[room.name];

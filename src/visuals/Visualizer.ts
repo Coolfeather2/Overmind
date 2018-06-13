@@ -1,18 +1,21 @@
 import {profile} from '../profiler/decorator';
-
-export var asciiLogo: string[] = ['___________________________________________________________',
-								  '',
-								  ' _____  _    _ _______  ______ _______ _____ __   _ ______ ',
-								  '|     |  \\  /  |______ |_____/ |  |  |   |   | \\  | |     \\',
-								  '|_____|   \\/   |______ |    \\_ |  |  | __|__ |  \\_| |_____/',
-								  '',
-								  '_______________________ Screeps AI ________________________'];
+import {StructureMap} from '../roomPlanner/RoomPlanner';
+import {asciiLogo} from './logos';
 
 @profile
 export class Visualizer {
 
 	static get enabled(): boolean {
 		return Memory.settings.enableVisuals;
+	}
+
+	static circle(pos: RoomPosition, color = 'red', opts = {}): RoomVisual {
+		_.defaults(opts, {
+			fill   : color,
+			radius : 0.35,
+			opacity: 0.5,
+		});
+		return new RoomVisual(pos.roomName).circle(pos.x, pos.y, opts);
 	}
 
 	static marker(pos: RoomPosition, opts = {}): RoomVisual {

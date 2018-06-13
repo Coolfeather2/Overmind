@@ -2,12 +2,13 @@
 import {hatcheryLayout} from './layouts/hatchery';
 import {commandCenterLayout} from './layouts/commandCenter';
 import {log} from '../lib/logger/log';
-import {Pathing} from '../pathing/pathing';
 import {Visualizer} from '../visuals/Visualizer';
 import {profile} from '../profiler/decorator';
 import {Mem} from '../memory';
 import {Colony} from '../Colony';
-import {BuildPriorities} from '../settings/priorities';
+import {RoadPlanner} from './RoadPlanner';
+import {BarrierPlanner} from './BarrierPlanner';
+import {BuildPriorities} from '../priorities/priorities_structures';
 
 export interface BuildingPlannerOutput {
 	name: string;
@@ -24,6 +25,10 @@ export interface StructureLayout {
 	}
 }
 
+export interface StructureMap {
+	[structureType: string]: RoomPosition[];
+}
+
 export interface RoomPlan {
 	[componentName: string]: {
 		map: StructureMap;
@@ -34,30 +39,31 @@ export interface RoomPlan {
 
 export interface PlannerMemory {
 	active: boolean;
-	mapsByLevel: { [rcl: number]: StructureMap };
-	roadPositions: protoPos[];
-	roadLookup: { [roadPosName: string]: boolean };
+	lastGenerated?: number;
+	mapsByLevel: { [rcl: number]: { [structureType: string]: protoPos[] } };
 	savedFlags: { secondaryColor: ColorConstant, pos: protoPos, memory: FlagMemory }[];
 }
 
 let memoryDefaults = {
-	active       : true,
-	mapsByLevel  : {},
-	roadPositions: [],
-	savedFlags   : [],
+	active     : true,
+	mapsByLevel: {},
+	savedFlags : [],
 };
 
 @profile
 export class RoomPlanner {
 	colony: Colony;							// The colony this is for
 	map: StructureMap;						// Flattened {structureType: RoomPositions[]} for final structure placements
-	placements: { [name: string]: RoomPosition }; // Used for generating the plan
+	placements: { 							// Used for generating the plan
+		[name: string]: RoomPosition
+	};
 	plan: RoomPlan;							// Contains maps, positions, and rotations of each hivecluster component
-	roadPositions: RoomPosition[];			// Roads that aren't part of components
-	private textPositions: RoomPosition[];
-	private settings: {
-		siteCheckFrequency: number;
-		maxSitesPerColony: number;
+	barrierPlanner: BarrierPlanner;
+	roadPlanner: RoadPlanner;
+
+	static settings = {
+		siteCheckFrequency: 200,
+		maxSitesPerColony : 10,
 	};
 
 	constructor(colony: Colony) {
@@ -65,14 +71,10 @@ export class RoomPlanner {
 		this.placements = {};
 		this.plan = {};
 		this.map = {};
-		this.roadPositions = [];
-		this.textPositions = [];
-		this.settings = {
-			siteCheckFrequency: 200,
-			maxSitesPerColony : 20,
-		};
+		this.barrierPlanner = new BarrierPlanner(this);
+		this.roadPlanner = new RoadPlanner(this);
 		if (this.active && Game.time % 25 == 0) {
-			log.info(`RoomPlanner for ${this.colony.room.print} is still active! Finalize or cancel to save CPU.`);
+			log.alert(`RoomPlanner for ${this.colony.room.print} is still active! Close to save CPU.`);
 		}
 	}
 
@@ -91,6 +93,39 @@ export class RoomPlanner {
 		}
 	}
 
+	/* Return a list of room positions for planned structure locations at RCL8 (or undefined if plan isn't made yet) */
+	plannedStructurePositions(structureType: StructureConstant): RoomPosition[] | undefined {
+		if (this.map[structureType]) {
+			return this.map[structureType];
+		}
+		let roomMap = this.memory.mapsByLevel ? this.memory.mapsByLevel[8] : undefined;
+		if (roomMap && roomMap[structureType]) {
+			return _.map(roomMap[structureType], protoPos => derefRoomPosition(protoPos));
+		}
+	}
+
+	/* Return the planned location of the storage structure */
+	get storagePos(): RoomPosition | undefined {
+		if (this.placements.commandCenter) {
+			return this.placements.commandCenter;
+		}
+		let positions = this.plannedStructurePositions(STRUCTURE_STORAGE);
+		if (positions) {
+			return positions[0];
+		}
+	}
+
+	/* Return the planned location of the storage structure */
+	get hatcheryPos(): RoomPosition | undefined {
+		if (this.placements.hatchery) {
+			return this.placements.hatchery;
+		}
+		let positions = this.plannedStructurePositions(STRUCTURE_SPAWN);
+		if (positions) {
+			return positions[0];
+		}
+	}
+
 	private reactivate(): void {
 		// Reinstantiate flags
 		for (let protoFlag of this.memory.savedFlags) {
@@ -106,13 +141,10 @@ export class RoomPlanner {
 		// Display the activation message
 		let msg = [
 			`Room planner activated for ${this.colony.name}. Reinstantiating flags from previous session on next tick.`,
-			'Place colony components and routing hints with room planner flags:',
+			'Place colony components with room planner flags:',
 			'    Place hatchery:        white/green',
 			'    Place command center:  white/blue',
-			'    Place upgrade site:    white/purple',
-			'    Place mining group:    white/yellow',
-			'    Routing hints:         white/white',
-			'Set component rotation by writing an angle (0,90,180,270 or 0,1,2,3) to flag.memory.rotation.',
+			// 'Set component rotation by writing an angle (0,90,180,270 or 0,1,2,3) to flag.memory.rotation.',
 			'Finalize layout '
 		];
 		_.forEach(msg, command => console.log(command));
@@ -123,42 +155,10 @@ export class RoomPlanner {
 		// Reset everything
 		this.plan = {};
 		this.map = {};
-		this.roadPositions = [];
 		// Generate a plan, placing components by flags
 		this.plan = this.generatePlan(level);
 		// Flatten it into a map
 		this.map = this.mapFromPlan(this.plan);
-		// Connect commandCenter to hatchery, upgradeSites, and all miningSites, and place containers
-		if (this.placements.commandCenter) {
-			// Connect commandCenter to hatchery
-			if (this.placements.hatchery) this.planRoad(this.placements.commandCenter, this.placements.hatchery);
-			// Connect commandCenter to upgradeSite and place container site as necessary
-			if (this.placements.upgradeSite) {
-				this.planRoad(this.placements.commandCenter, this.placements.upgradeSite);
-				this.placeStructure(STRUCTURE_CONTAINER, this.placements.upgradeSite);
-			}
-			// Connect commandCenter to each miningSite in the colony and place a container appropriately
-			for (let i in this.colony.miningSites) {
-				let site = this.colony.miningSites[i];
-				let output = site.outputConstructionSite || site.output;
-				if (!output) { // replace the last element of the path with a container
-					let path = this.planRoad(this.placements.commandCenter, site.pos);
-					if (path) {
-						let containerPos = _.last(path);
-						_.remove(this.roadPositions, containerPos);
-						this.placeStructure(STRUCTURE_CONTAINER, containerPos);
-					}
-				} else {
-					let path = this.planRoad(this.placements.commandCenter, output.pos);
-					this.placeStructure(STRUCTURE_CONTAINER, output.pos); // include the current container position
-				}
-			}
-			// // Connect hatchery to each outpost controller
-			// for (let outpost of this.colony.outposts) {
-			// 	if (outpost.controller) this.planRoad(this.placements.commandCenter, outpost.controller.pos);
-			// }
-		}
-		this.formatRoadPositions();
 	}
 
 	/* Adds the specified structure directly to the map. Only callable after this.map is generated.
@@ -240,6 +240,7 @@ export class RoomPlanner {
 		}
 	}
 
+	// TODO: component rotation isn't currently fully supported
 	/* Rotates component positions about a pivot point counterclockwise by the given angle; done in-place */
 	private rotateComponent(map: StructureMap, pivot: RoomPosition | Coord, angle: number): void {
 		let R = ([x, y]: number[]) => ([x, y]);
@@ -264,74 +265,51 @@ export class RoomPlanner {
 		}
 	}
 
-	// Plan a road between two locations; this.map must have been generated first!
-	planRoad(pos1: RoomPosition, pos2: RoomPosition, opts: TravelToOptions = {}): RoomPosition[] | void {
+
+	/* Generates a list of impassible obstacles from this.map or from this.memory.map */
+	getObstacles(): RoomPosition[] {
 		let obstacles: RoomPosition[] = [];
 		let passableStructureTypes: string[] = [STRUCTURE_ROAD, STRUCTURE_CONTAINER, STRUCTURE_RAMPART];
+		if (this.map != {}) { // if room planner has made the map, use that
+			for (let structureType in this.map) {
+				if (!passableStructureTypes.includes(structureType)) {
+					obstacles = obstacles.concat(this.map[structureType]);
+				}
+			}
+		} else { // else, serialize from memory
+			for (let structureType in this.memory.mapsByLevel[8]) {
+				if (!passableStructureTypes.includes(structureType)) {
+					obstacles = obstacles.concat(_.map(this.memory.mapsByLevel[8][structureType],
+													   protoPos => derefRoomPosition(protoPos)));
+				}
+			}
+		}
+		return _.unique(obstacles);
+	}
+
+	/* Check to see if there are any structures that can't be built */
+	private findCollision(ignoreRoads = false): RoomPosition | undefined {
 		for (let structureType in this.map) {
-			if (!passableStructureTypes.includes(structureType)) {
-				obstacles = obstacles.concat(this.map[structureType]);
+			if (ignoreRoads && structureType == STRUCTURE_ROAD) {
+				continue;
 			}
-		}
-		obstacles = _.unique(obstacles);
-		opts = _.merge(opts, {obstacles: obstacles, ensurePath: true, range: 1});
-		// Find the shortest path, preferentially stepping on tiles with road routing flags on them
-		let roadPath = Pathing.routeRoadPath(pos1, pos2, opts).path;
-		let shortestPath = Pathing.findShortestPath(pos1, pos2, opts).path;
-		let errorTolerance = 1; // largest acceptable difference between planned and shortest path
-		if (shortestPath.length <= roadPath.length &&
-			roadPath.length <= shortestPath.length + errorTolerance) {
-			this.roadPositions = this.roadPositions.concat(roadPath);
-			return roadPath;
-		} else if (roadPath.length > shortestPath.length + errorTolerance) {
-			Visualizer.drawPath(shortestPath, {stroke: 'green', strokeWidth: 0.2});
-			Visualizer.drawPath(roadPath, {stroke: 'red', strokeWidth: 0.2});
-			let textPos = roadPath[Math.min(5, roadPath.length - 1)];
-			if (this.textPositions.includes(textPos)) {
-				textPos.y += 1;
+			for (let pos of this.map[structureType]) {
+				if (Game.map.getTerrainAt(pos) == 'wall') {
+					return pos;
+				}
 			}
-			this.textPositions.push(textPos);
-			Visualizer.text(`Planned: ${roadPath.length} (SHOWN)`, textPos,
-							{color: 'red', align: 'left'});
-			Visualizer.text(`Shortest: ${shortestPath.length} `, textPos,
-							{color: 'green', align: 'right'});
-			this.roadPositions = this.roadPositions.concat(roadPath);
-			return roadPath;
-		} else {
-			// Pathing algorithm fucked up here; defaulting to shortest path
-			Visualizer.drawPath(shortestPath, {stroke: 'green', strokeWidth: 0.2});
-			Visualizer.drawPath(roadPath, {stroke: 'red', strokeWidth: 0.2});
-			let textPos = roadPath[Math.min(5, roadPath.length - 1)];
-			if (this.textPositions.includes(textPos)) {
-				textPos.y += 1;
-			}
-			this.textPositions.push(textPos);
-			Visualizer.text(`Planned: ${roadPath.length} (ERROR)`, textPos,
-							{color: 'red', align: 'left'});
-			Visualizer.text(`Shortest: ${shortestPath.length} (SHOWN) `, textPos,
-							{color: 'green', align: 'right'});
-			this.roadPositions = this.roadPositions.concat(shortestPath);
-			return shortestPath;
-			// log.error(`${pos1} to ${pos2}: shortest path has length ${shortestPath.length}, ` +
-			// 		  `longer than road path length ${roadPath.length}... whaaaa?`);
 		}
 	}
 
-	/* Ensure that the roads doesn't overlap with roads from this.map and that the positions are unique */
-	private formatRoadPositions(): void {
-		// Make road position list unique
-		this.roadPositions = _.unique(this.roadPositions);
-		// Remove roads located on exit tiles
-		_.remove(this.roadPositions, pos => pos.isEdge);
-		// Remove any roads duplicated in this.map
-		_.remove(this.roadPositions, pos => this.map[STRUCTURE_ROAD] && this.map[STRUCTURE_ROAD].includes(pos));
-	}
-
-	/* Write everything to memory at the end of activation */
-	finalize(): void {
-		let layoutIsValid: boolean = !!this.placements.commandCenter &&
-									 !!this.placements.hatchery &&
-									 !!this.placements.upgradeSite;
+	/* Write everything to memory at the end of activation. If ignoreRoads is set, it will allow collisions with
+	 * roads, but will continue to alert you every time it fails to build a road in the terrain pos (WIP) */
+	finalize(ignoreRoads = false): void {
+		let collision = this.findCollision(ignoreRoads);
+		if (collision) {
+			console.log(`Invalid layout: collision detected at ${collision.print}!`);
+			return;
+		}
+		let layoutIsValid: boolean = !!this.placements.commandCenter && !!this.placements.hatchery;
 		if (layoutIsValid) { // Write everything to memory
 			// Generate maps for each rcl
 			this.memory.mapsByLevel = {};
@@ -339,11 +317,10 @@ export class RoomPlanner {
 				this.make(rcl);
 				this.memory.mapsByLevel[rcl] = this.map;
 			}
-			// Write road positions to memory, sorted by distance to storage
-			this.memory.roadPositions = _.sortBy(this.roadPositions,
-												 pos => pos.getMultiRoomRangeTo(this.placements.commandCenter));
-			let allRoadPos: RoomPosition[] = this.map[STRUCTURE_ROAD].concat(this.roadPositions);
-			this.memory.roadLookup = _.zipObject(_.map(allRoadPos, pos => pos.name), _.map(allRoadPos, pos => true));
+			// Finalize the barrier planner
+			this.barrierPlanner.finalize();
+			// Finalize the road planner
+			this.roadPlanner.finalize();
 			// Save flags and remove them
 			let flagsToWrite = _.filter(this.colony.flags, flag => flag.color == COLOR_WHITE);
 			for (let flag of flagsToWrite) {
@@ -354,20 +331,24 @@ export class RoomPlanner {
 											});
 				flag.remove();
 			}
+			this.memory.lastGenerated = Game.time;
 			console.log('Room layout and flag positions have been saved.');
 			this.active = false;
 			this.buildMissing();
+			// Finalize the road planner layout
 		} else {
-			console.log('Not a valid room layout! Must have hatchery, commandCenter and upgradeSite placements.');
+			console.log('Not a valid room layout! Must have hatchery and commandCenter placements.');
 		}
 	}
 
 	init(): void {
-
+		this.barrierPlanner.init();
+		this.roadPlanner.init();
 	}
 
+	/* Whether a constructionSite should be placed at a position */
 	static shouldBuild(structureType: BuildableStructureConstant, pos: RoomPosition): boolean {
-		if (!Game.rooms[pos.roomName]) return false;
+		if (!pos.room) return false;
 		let buildings = _.filter(pos.lookFor(LOOK_STRUCTURES), s => s && s.structureType == structureType);
 		let sites = pos.lookFor(LOOK_CONSTRUCTION_SITES);
 		if (!buildings || buildings.length == 0) {
@@ -381,22 +362,22 @@ export class RoomPlanner {
 	/* Create construction sites for any buildings that need to be built */
 	private buildMissing(): void {
 		// Max buildings that can be placed each tick
-		let count = this.settings.maxSitesPerColony - this.colony.constructionSites.length;
+		let count = RoomPlanner.settings.maxSitesPerColony - this.colony.constructionSites.length;
 		// Recall the appropriate map
-		this.map = this.memory.mapsByLevel[this.colony.controller.level];
+		this.map = _.mapValues(this.memory.mapsByLevel[this.colony.controller.level], posArr =>
+			_.map(posArr, protoPos => derefRoomPosition(protoPos)));
 		if (!this.map) { // in case a map hasn't been generated yet
 			log.info(this.colony.name + ' does not have a room plan yet! Unable to build missing structures.');
 		}
-		// Build missing structures
+		// Build missing structures from room plan
 		for (let structureType of BuildPriorities) {
 			if (this.map[structureType]) {
-				for (let protoPos of this.map[structureType]) {
-					let pos = derefRoomPosition(protoPos);
+				for (let pos of this.map[structureType]) {
 					if (count > 0 && RoomPlanner.shouldBuild(structureType, pos)) {
 						let ret = pos.createConstructionSite(structureType);
 						if (ret != OK) {
-							log.error(`${this.colony.name}: couldn't create construction site! ` +
-									  `pos: ${pos.x} ${pos.y} ${pos.roomName}, type: ${structureType}, Result: ${ret}`);
+							log.error(`${this.colony.name}: couldn't create construction site of type ` +
+									  `"${structureType}" at ${pos.print}. Result: ${ret}`);
 						} else {
 							count--;
 						}
@@ -404,32 +385,19 @@ export class RoomPlanner {
 				}
 			}
 		}
-		// Build missing roads
-		this.roadPositions = _.map(this.memory.roadPositions, protoPos => derefRoomPosition(protoPos));
-		for (let pos of this.roadPositions) {
-			if (count > 0 && RoomPlanner.shouldBuild(STRUCTURE_ROAD, pos)) {
-				let ret = pos.createConstructionSite(STRUCTURE_ROAD);
-				if (ret != OK) {
-					log.error(`${this.colony.name}: couldn't create construction site! ` +
-							  `pos: ${pos.x} ${pos.y} ${pos.roomName}, type: ${STRUCTURE_ROAD}, Result: ${ret}`);
-				} else {
-					count--;
-				}
+		// Build extractor on mineral deposit if not already present
+		let mineral = this.colony.room.find(FIND_MINERALS)[0];
+		if (mineral) {
+			let extractor = mineral.pos.lookForStructure(STRUCTURE_EXTRACTOR);
+			if (!extractor) {
+				mineral.pos.createConstructionSite(STRUCTURE_EXTRACTOR);
 			}
 		}
 	}
 
-	/* Quick lookup for if a road should be in this position */
+	/* Quick lookup for if a road should be in this position. Roads returning false won't be maintained. */
 	roadShouldBeHere(pos: RoomPosition): boolean {
-		// Initial migration code, can delete later
-		if (!this.memory.roadLookup) {
-			let allRoadPos: RoomPosition[] = _.map(this.memory.mapsByLevel[8][STRUCTURE_ROAD],
-												   pos => derefRoomPosition(pos));
-			allRoadPos = allRoadPos.concat(_.map(this.memory.roadPositions,
-												 pos => derefRoomPosition(pos)));
-			this.memory.roadLookup = _.zipObject(_.map(allRoadPos, pos => pos.name), _.map(allRoadPos, pos => true));
-		}
-		return this.memory.roadLookup[pos.name] || false;
+		return this.roadPlanner.roadShouldBeHere(pos);
 	}
 
 	run(): void {
@@ -437,16 +405,19 @@ export class RoomPlanner {
 			this.make();
 			this.visuals();
 		} else {
-			if (Game.time % this.settings.siteCheckFrequency == 0) {
+			if (Game.time % RoomPlanner.settings.siteCheckFrequency == this.colony.id) {
 				this.buildMissing();
 			}
 		}
+		// Run the barrier planner
+		this.barrierPlanner.run();
+		// Run the road planner
+		this.roadPlanner.run();
 	}
 
 	visuals(): void {
 		// Draw the map
 		Visualizer.drawLayout(this.map);
-		Visualizer.drawRoads(this.roadPositions);
 	}
 
 }

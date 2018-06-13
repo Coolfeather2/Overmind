@@ -1,5 +1,4 @@
 interface Memory {
-	// [name: string]: any;
 	Overmind: {};
 	colonies: { [name: string]: ColonyMemory };
 	creeps: { [name: string]: CreepMemory; };
@@ -10,7 +9,9 @@ interface Memory {
 	pathing: PathingMemory;
 	log: LoggerMemory;
 	pathLengths: any;
-	// stats: StatsMemory;
+	stats: any;
+	constructionSites: { [id: string]: number };
+	signature: string;
 }
 
 interface StatsMemory {
@@ -54,18 +55,18 @@ interface StatsMemory {
 
 interface CreepMemory {
 	role: string;
-	// task: protoTask | null;
+	task: protoTask | null;
 	overlord: string | null;
 	colony: string;
 	data: {
 		origin: string;
-		replaceAt: number;
-		boosts: { [resourceName: string]: boolean };
-		moveSpeed?: number;
+		// replaceAt: number;
+		// boosts: { [resourceName: string]: boolean };
+		// moveSpeed?: number;
 	};
 	// Traveler components
-	_travel: any;
-	_trav: any;
+	// _travel: any;
+	_trav: TravelData | null;
 	// Combat
 	partner?: string;
 	retreating?: boolean;
@@ -98,22 +99,67 @@ interface FlagMemory {
 	rotation?: number;
 	colony?: string;
 	parent?: string;
-	overlords: { [overlordName: string]: OverlordMemory };
+	// overlords: { [overlordName: string]: OverlordMemory };
 
 	// [otherProperties: string]: any;
 }
 
+interface SavedRoomObject {
+	c: string; 	// coordinate name
+	// id: string;	// id of object
+}
+
+interface SavedSource extends SavedRoomObject {
+	contnr: string | undefined;
+}
+
+interface SavedController extends SavedRoomObject {
+	level: number;
+	owner: string | undefined;
+	res: {
+		username: string,
+		ticksToEnd: number,
+	} | undefined;
+	SM: number | undefined;
+	SMavail: number;
+	SMcd: number | undefined;
+	prog: number | undefined;
+	progTot: number | undefined;
+}
+
+interface SavedMineral extends SavedRoomObject {
+	mineralType: MineralConstant;
+	density: number;
+}
+
 interface RoomMemory {
 	avoid?: number;
+	tick?: number;
+	src?: SavedSource[];
+	ctrl?: SavedController | undefined;
+	mnrl: SavedMineral | undefined;
+	SKlairs?: SavedRoomObject[];
+	importantStructs?: {
+		// Positions of important structures relevant to sieges
+		towers: string[];
+		spawns: string[];
+		storage: string | undefined;
+		terminal: string | undefined;
+		walls: string[];
+		ramparts: string[];
+	} | undefined;
 }
 
 interface SpawnMemory {
 }
 
 interface ColonyMemory {
-	overseer: OverseerMemory;
-	hatchery: HatcheryMemory;
-	commandCenter: CommandCenterMemory;
+	defcon: {
+		level: number,
+		tick: number,
+	}
+
+	[key: string]: any,
 }
 
 interface OverseerMemory {
@@ -123,20 +169,14 @@ interface OverlordMemory {
 
 }
 
-interface MiningSiteMemory {
-	stats: {
-		usage: number;
-		downtime: number;
-	};
-}
 
 interface HatcheryMemory {
-	idlePos: protoPos;
+	// idlePos?: protoPos;
 	stats: {
 		uptime: number;
 	};
 }
 
 interface CommandCenterMemory {
-	idlePos: protoPos;
+	idlePos?: protoPos;
 }

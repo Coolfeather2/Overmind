@@ -23,13 +23,25 @@ export default {
     output: {
         file: "dist/main.js",
         format: "cjs",
-        sourcemap: true
+        sourcemap: false
     },
-
+    onwarn: function (warning) {
+        // Skip default export warnings from using obfuscated overmind file in main
+        if (warning.toString().includes('commonjs-proxy')) {
+            return;
+        }
+        // console.warn everything else
+        console.warn(warning.message);
+    },
     plugins: [
         clean(),
         resolve(),
-        commonjs(),
+        commonjs({
+                     namedExports: {
+                         'src/Overmind_obfuscated': ['_Overmind'],
+                         'screeps-profiler': ['profiler']
+                     }
+                 }),
         typescript({tsconfig: "./tsconfig.json"}),
         screeps({config: cfg, dryRun: cfg == null})
     ]

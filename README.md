@@ -1,46 +1,63 @@
-![](/assets/OvermindLogo.png)
+![](/assets/img/OvermindLogo.png)
 
 # Overmind Screeps AI
 
-Screeps is an [MMO strategy game for programmers](https://screeps.com/). The core objective is to expand your colony; to control your units, you write code in JavaScript (or a transpiled language). The units run in real-time even when you aren't actively playing the game.
+### Current release: [Overmind v0.3.x - "Back to Base-ics"](https://github.com/bencbartlett/Overmind/releases)
 
-This is the AI system I have been developing for Screeps, themed loosely on the [Zerg's swarm intelligence](http://starcraft.wikia.com/wiki/Overlord) from Starcraft. Creeps belong to [Colonies](https://github.com/bencbartlett/Overmind/blob/master/src/Colony.ts), which have several [Hive Clusters](https://github.com/bencbartlett/Overmind/blob/master/src/hiveClusters/HiveCluster.ts). Creep actions for a given process are orchestrated by [Overlords](https://github.com/bencbartlett/Overmind/blob/master/src/overlords/Overlord.ts). The colony [Overseer](https://github.com/bencbartlett/Overmind/blob/master/src/Overseer.ts) places [Directives](https://github.com/bencbartlett/Overmind/blob/master/src/directives/Directive.ts) to adapt to stimuli.
+- See the [changelog](https://github.com/bencbartlett/Overmind/blob/master/CHANGELOG.md) for patch notes.
+- Documentation is available in the [wiki](https://github.com/bencbartlett/Overmind/wiki).
+- Join the discussion in the [#overmind](https://screeps.slack.com/messages/overmind) Slack channel!
+- Development roadmap can be seen [here](https://github.com/bencbartlett/Overmind/projects/1).
+- Find me in game [here](https://screeps.com/a/#!/profile/Muon).
 
+---
 
-### We're on slack!
-Found something you like, hate, or find confusing? Join the discussion on Slack in the [#overmind](https://screeps.slack.com/messages/overmind) channel!
+# About Overmind
 
+<img align="right" src="/assets/img/exampleRoomBanner.png" width=200>
 
-### Using Overmind as your AI
-If you're new to screeps, I wouldn't recommend using Overmind out of the box; most of the fun of the game is programming your own AI and watching your code run like a well-oiled machine! However, when I first started playing Screeps and was looking for inspiration in other codebases, I was frustrated by a general lack of documentation and readibility, so Overmind was programmed with this in mind; it might be a good resource to reference when coding your first AI!
+### What is Screeps?
 
-If you do want to use Overmind as-is, it "should" work right out of the box. However, if you find something broken, please [submit an issue](https://github.com/bencbartlett/Overmind/issues/new) and I'll try to fix it.
+Screeps is an [MMO strategy game for programmers](https://screeps.com/). The core objective is to expand your colony, gathering resources and fighting other players along the way. To control your units, you code an AI in JavaScript; everything from moving, mining, building, fighting, and trading is entirely driven by your code. Because Screeps is an MMO, it takes place on a single server that runs 24/7, populated by every other player and their army of creeps. When you log off, your population continues buzzing away with whatever task you set them. Screeps pits your programming prowess head-to-head with other people to see who can think of the most efficient methods of completing tasks or imagine new ways to defeat enemies.
 
-### Installation 
-Overmind uses the [`screeps-typescript-starter v3.0`](https://github.com/screepers/screeps-typescript-starter) installation and deployment scripts. Setting up the code base is simple with `npm`. To install, navigate to the Overmind root directory and run
+### What is Overmind?
 
-```npm install```
+Overmind is my personal codebase that I run on the public server. The structure of the AI is themed loosely around the [Zerg's swarm intelligence](http://starcraft.wikia.com/wiki/Overlord) from Starcraft. [Overlords](https://github.com/bencbartlett/Overmind/blob/master/src/overlords/Overlord.ts) orchestrate Creep actions within each [Colony](https://github.com/bencbartlett/Overmind/blob/master/src/Colony.ts), and the colony [Overseer](https://github.com/bencbartlett/Overmind/blob/master/src/Overseer.ts) places [Directives](https://github.com/bencbartlett/Overmind/blob/master/src/directives/Directive.ts) to adapt to stimuli.
 
-To compile (to a single `main.js` file) and deploy to the Screeps server, create a `screeps.json` file from the example, then nagivate to the Overmind root and run
+The AI is nearly entirely automated - the only manual input required is claiming new rooms and choosing a building layout. The [latest release](https://github.com/bencbartlett/Overmind/releases) should work right out of the box; however, if you find something broken, please [submit an issue](https://github.com/bencbartlett/Overmind/issues/new) and I'll try to fix it.
 
-```npm run push-main```
+### Can I use Overmind as my bot?
+If you're new to Screeps, I would definitely recommend writing your own AI: most of the fun of the game is programming your own bot and watching your little ant farm run! However, I've tried to make the codebase readable and well-documented, so feel free to fork the project or use it as inspiration when writing your AI.
 
-For additional help, see the [`screeps-typescript-starter` GitBook](https://screepers.gitbooks.io/screeps-typescript-starter/getting-started/deploying.html).
+If you still want to use Overmind on the public server, that's okay too - there are a number of people already doing this. But please realize that using a mature AI like this gives you a huge advantage over other new players, so don't go out of your way to ruin someone else's fun. In the future, I will be implementing methods for novice players to opt out of excessive aggression by Overmind bots (as long as they don't start a conflict and stay out of its way).
 
-### Find me in game! (username: Muon)
-I've recently respawned to shard2 in the [`EXS4X` sector](https://screeps.com/a/#!/map/shard2?pos=5.826,44.939).
+# Installation
 
+### Out of the box
+If you just want to run Overmind without modification, you can copy the compiled `main.js` file attached to the [latest release](https://github.com/bencbartlett/Overmind/releases) into your script. Please note that Overmind is not (yet) fully automated; refer to the [Overmind wiki](https://github.com/bencbartlett/Overmind/wiki) for how to run the bot.
 
-# AI Structure
+### Compiling from source
+To install the full codebase, download or clone the repository. (Please note that while the latest release of Overmind should always be stable, the latest commit may contain unstable features.) Navigate to the Overmind root directory and run ```npm install```. To compile and deploy the codebase, create a `screeps.json` file from the [example file](https://github.com/bencbartlett/Overmind/blob/master/screeps.example.json), then do one of the following actions:
 
-(Click the image to see a higher-resolution version.)
+- Compile and deploy to public server: `rollup -c --dest main`
+- Compile and deploy to private server: `rollup -c --dest pserver`
+- Compile without deploying: `rollup -c`
 
-![[AI structural schematic](/assets/AIdiagram.png)](https://raw.githubusercontent.com/bencbartlett/Overmind/master/assets/AIdiagram.png)
+The deployment scripts are based on [`screeps-typescript-starter`](https://github.com/screepers/screeps-typescript-starter); for additional help, refer to their [GitBook](https://screepers.gitbooks.io/screeps-typescript-starter/getting-started/deploying.html).
 
+### Setting up the Grafana dashboard
+
+Overmind includes a [Grafana dashboard](https://github.com/bencbartlett/Overmind/tree/master/assets/Grafana%20Dashboards) (shown below) which tracks detailed operating statistics. To set up the dashboard:
+
+1. Register for grafana service at [screepspl.us](https://screepspl.us/services/grafana)
+2. Setup the Grafana agent. I would suggest [running it on a free micro instance of Google Compute](https://github.com/bonzaiferroni/bonzAI/wiki/Screepspl.us-agent-with-Compute-Engine).
+3. Import the dashboard from [Overmind.json](https://github.com/bencbartlett/Overmind/blob/master/assets/Grafana%20Dashboards/Overmind.json) and change `$User` to your username. (Make sure to use Grafana 5! screepspl.us/grafana5)
+
+![](/assets/img/dashboard_compacted_2.png)
 
 # Design overview
 
-Check out the [Overmind wiki](https://github.com/bencbartlett/Overmind/wiki) for in-depth explanations of parts of the design of the AI.
+Check out the [Overmind wiki](https://github.com/bencbartlett/Overmind/wiki) for in-depth explanations of parts of the design of the AI. (Click the diagram below to see a higher-resolution version.)
 
-* [Hive clusters](https://github.com/bencbartlett/Overmind/wiki/Design:-Hive-Clusters)
+![[AI structural schematic](/assets/AIdiagram.png)](https://raw.githubusercontent.com/bencbartlett/Overmind/master/assets/img/AIdiagram.png)
 
