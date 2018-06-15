@@ -4,7 +4,7 @@ import {commandCenterLayout} from './layouts/commandCenter';
 import {log} from '../lib/logger/log';
 import {Visualizer} from '../visuals/Visualizer';
 import {profile} from '../profiler/decorator';
-import {Mem} from '../memory';
+import {Mem} from '../Memory';
 import {Colony} from '../Colony';
 import {RoadPlanner} from './RoadPlanner';
 import {BarrierPlanner} from './BarrierPlanner';
@@ -21,7 +21,10 @@ export interface StructureLayout {
 	[rcl: number]: BuildingPlannerOutput | undefined;
 
 	data: {
-		pos: Coord;
+		anchor: Coord;
+		pointsOfInterest?: {
+			[pointLabel: string]: Coord;
+		}
 	}
 }
 
@@ -188,7 +191,7 @@ export class RoomPlanner {
 		for (let name in this.placements) {
 			let layout = this.getLayout(name);
 			if (layout) {
-				let anchor: Coord = layout.data.pos;
+				let anchor: Coord = layout.data.anchor;
 				let pos = this.placements[name];
 				let rotation: number = pos.lookFor(LOOK_FLAGS)[0]!.memory.rotation || 0;
 				let componentMap = this.parseLayout(layout, level);

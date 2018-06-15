@@ -520,7 +520,7 @@
         "fillColor": "rgba(31, 118, 189, 0.18)",
         "full": false,
         "lineColor": "rgb(31, 120, 193)",
-        "show": true
+        "show": false
       },
       "tableColumn": "",
       "targets": [
@@ -616,6 +616,7 @@
       "tableColumn": "",
       "targets": [
         {
+          "$$hashKey": "object:1555",
           "refId": "A",
           "target": "screeps.$User.leaderboard.rank"
         }
