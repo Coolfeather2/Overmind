@@ -6,14 +6,14 @@ import {profile} from './profiler/decorator';
 import {Colony, ColonyStage} from './Colony';
 import {Overlord} from './overlords/Overlord';
 import {Directive} from './directives/Directive';
-import {log} from './lib/logger/log';
+import {log} from './console/log';
 import {Visualizer} from './visuals/Visualizer';
-import {Pathing} from './pathing/Pathing';
+import {Pathing} from './movement/Pathing';
 import {DirectiveGuardSwarm} from './directives/defense/guardSwarm';
 import {DirectiveInvasionDefense} from './directives/defense/invasionDefense';
 import {Mem} from './Memory';
 import {DirectiveNukeResponse} from './directives/defense/nukeResponse';
-import {DirectiveAbandon} from './directives/colonization/abandon';
+import {DirectiveEvacuateTerminal} from './directives/logistics/evacuateTerminal';
 import {MinerSetup} from './overlords/core/miner';
 import {QueenSetup} from './overlords/core/queen';
 
@@ -63,7 +63,7 @@ export class Overseer {
 		// 	for (let resourceType in room.drops) {
 		// 		for (let drop of room.drops[resourceType]) {
 		// 			if (drop.amount > 200 || drop.resourceType != RESOURCE_ENERGY) {
-		// 				DirectiveLogisticsRequest.createIfNotPresent(drop.pos, 'pos', {quiet: true});
+		// 				DirectivePickup.createIfNotPresent(drop.pos, 'pos', {quiet: true});
 		// 			}
 		// 		}
 		// 	}
@@ -71,7 +71,7 @@ export class Overseer {
 		// // Place a logistics request directive for every tombstone with non-empty store that isn't on a container
 		// for (let tombstone of this.colony.tombstones) {
 		// 	if (_.sum(tombstone.store) > 0 && !tombstone.pos.lookForStructure(STRUCTURE_CONTAINER)) {
-		// 		DirectiveLogisticsRequest.createIfNotPresent(tombstone.pos, 'pos', {quiet: true});
+		// 		DirectivePickup.createIfNotPresent(tombstone.pos, 'pos', {quiet: true});
 		// 	}
 		// }
 
@@ -105,9 +105,9 @@ export class Overseer {
 		}
 
 		// Place an abandon directive in case room has been breached to prevent terminal robbing
-		if (this.colony.breached && this.colony.terminal) {
-			DirectiveAbandon.createIfNotPresent(this.colony.terminal.pos, 'room');
-		}
+		// if (this.colony.breached && this.colony.terminal) {
+		// 	DirectiveEvacuateTerminal.createIfNotPresent(this.colony.terminal.pos, 'room');
+		// }
 	}
 
 
@@ -121,7 +121,12 @@ export class Overseer {
 		for (let structure of criticalStructures) {
 			if (structure.hits < structure.hitsMax &&
 				structure.pos.findInRange(this.colony.room.dangerousHostiles, 1).length > 0) {
-				this.colony.controller.activateSafeMode();
+				let ret = this.colony.controller.activateSafeMode();
+				if (ret != OK && !this.colony.controller.safeMode) {
+					if (this.colony.terminal) {
+						DirectiveEvacuateTerminal.createIfNotPresent(this.colony.terminal.pos, 'room');
+					}
+				}
 				return;
 			}
 		}
@@ -130,7 +135,12 @@ export class Overseer {
 			let firstHostile = _.first(this.colony.room.dangerousHostiles);
 			if (firstHostile && this.colony.spawns[0] &&
 				Pathing.isReachable(firstHostile.pos, this.colony.spawns[0].pos, {obstacles: barriers})) {
-				this.colony.controller.activateSafeMode();
+				let ret = this.colony.controller.activateSafeMode();
+				if (ret != OK && !this.colony.controller.safeMode) {
+					if (this.colony.terminal) {
+						DirectiveEvacuateTerminal.createIfNotPresent(this.colony.terminal.pos, 'room');
+					}
+				}
 				return;
 			}
 		}

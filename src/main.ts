@@ -22,7 +22,7 @@ import './prototypes/RoomVisual';
 import './prototypes/Room';
 import './prototypes/Structures';
 import './prototypes/Miscellaneous';
-import './tasks/prototypes';
+import './tasks/initializer'; // this line is necessary to ensure proper compilation ordering
 import {USE_PROFILER} from './~settings';
 import {sandbox} from './sandbox';
 import {Mem} from './Memory';
@@ -30,7 +30,7 @@ import {OvermindConsole} from './console/Console';
 import {Stats} from './stats/stats';
 import profiler from 'screeps-profiler';
 import OM from 'Overmind_obfuscated';
-import {log} from './lib/logger/log';
+import {log} from './console/log';
 import {VersionMigration} from './versionMigration/migrator';
 
 var _Overmind = (<any>OM)._Overmind as (new() => IOvermind);

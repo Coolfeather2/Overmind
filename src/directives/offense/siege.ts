@@ -1,9 +1,9 @@
 import {Directive} from '../Directive';
 import {profile} from '../../profiler/decorator';
 import {SiegeOverlord} from '../../overlords/offense/siege';
-import {Pathing} from '../../pathing/Pathing';
+import {Pathing} from '../../movement/Pathing';
 import {DirectiveHealPoint} from './healPoint';
-import {log} from '../../lib/logger/log';
+import {log} from '../../console/log';
 import {Visualizer} from '../../visuals/Visualizer';
 
 interface DirectiveSiegeMemory extends FlagMemory {
@@ -42,7 +42,7 @@ export class DirectiveSiege extends Directive {
 	calculateWaypoint(): RoomPosition | undefined {
 		// Calculate the recovery waypoint
 		let startPos = this.colony.hatchery ? this.colony.hatchery.pos : this.colony.pos;
-		let ret = Pathing.findTravelPath(startPos, this.pos, {range: 50});
+		let ret = Pathing.findPath(startPos, this.pos, {range: 50});
 		if (!ret.incomplete) {
 			let path = ret.path;
 			// Place the waypoint flag three squares before the last position in the previous room

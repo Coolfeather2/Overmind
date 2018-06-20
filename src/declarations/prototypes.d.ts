@@ -2,10 +2,6 @@ interface Creep {
 	memory: CreepMemory;
 	boosts: _ResourceConstantSansEnergy[];
 	boostCounts: { [boostType: string]: number };
-
-	travelTo(destination: RoomPosition | { pos: RoomPosition }, options?: TravelToOptions): number;
-
-	goTo(destination: RoomPosition | { pos: RoomPosition }, options?: TravelToOptions): number;
 }
 
 interface Flag {
@@ -32,11 +28,11 @@ interface Room {
 	dangerousPlayerHostiles: Creep[];
 	hostileStructures: Structure[];
 	flags: Flag[];
-	// Preprocessed structures
+	// Cached structures
 	tombstones: Tombstone[];
 	drops: { [resourceType: string]: Resource[] };
 	droppedEnergy: Resource[];
-	droppedMinerals: Resource[];
+	// droppedMinerals: Resource[];
 	droppedPower: Resource[];
 	structures: { [structureType: string]: Structure[] };
 	spawns: StructureSpawn[];
@@ -51,14 +47,15 @@ interface Room {
 	mineral: Mineral | undefined;
 	keeperLairs: StructureKeeperLair[];
 	roads: StructureRoad[];
-	// sinks: Sink[];
 	repairables: Structure[];
 	constructionSites: ConstructionSite[];
-	// structureSites: ConstructionSite[];
-	// roadSites: ConstructionSite[];
 	barriers: (StructureWall | StructureRampart)[];
 	ramparts: StructureRampart[];
 	walls: StructureWall[];
+	// Used by movement library
+	_defaultMatrix: CostMatrix;
+	_creepMatrix: CostMatrix;
+	_skMatrix: CostMatrix;
 
 	getStructures(structureType: string): Structure[];
 
@@ -149,7 +146,7 @@ interface StructureExtension {
 }
 
 interface StructureLab {
-	getMineralType(): _ResourceConstantSansEnergy | undefined;
+
 }
 
 interface StructureLink {

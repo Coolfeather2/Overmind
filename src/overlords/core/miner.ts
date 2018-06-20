@@ -4,7 +4,7 @@ import {Zerg} from '../../Zerg';
 import {Tasks} from '../../tasks/Tasks';
 import {OverlordPriority} from '../../priorities/priorities_overlords';
 import {profile} from '../../profiler/decorator';
-import {Pathing} from '../../pathing/Pathing';
+import {Pathing} from '../../movement/Pathing';
 import {DEFCON} from '../../Colony';
 import {CreepSetup} from '../CreepSetup';
 
@@ -67,16 +67,17 @@ export class MiningOverlord extends Overlord {
 				// Move onto the output container if you're the only miner
 				if (!miner.pos.isEqualTo(this.miningSite.output.pos) && this.miners.length == 1 &&
 					this.miningSite.output instanceof StructureContainer) {
-					miner.travelTo(this.miningSite.output, {range: 0});
+					miner.goTo(this.miningSite.output, {range: 0});
 				}
 			}
 			// Else build the output if there is a constructionSite (placement handled by miningSite)
 			else {
 				if (this.miningSite.outputConstructionSite) {
 					miner.task = Tasks.build(this.miningSite.outputConstructionSite);
-					if (miner.pos.isEqualTo(this.miningSite.outputConstructionSite.pos)) {
+					if (this.miningSite.outputConstructionSite.structureType == STRUCTURE_LINK &&
+						miner.pos.isEqualTo(this.miningSite.outputConstructionSite.pos)) {
 						// Move off of the contructionSite (link sites won't build)
-						miner.travelTo(this.colony.controller);
+						miner.moveOffCurrentPos();
 					}
 				} else if (this.allowDropMining) {
 					// Dropmining at early levels
@@ -87,7 +88,7 @@ export class MiningOverlord extends Overlord {
 			}
 		} else {
 			// miner.task = Tasks.goTo(this.miningSite);
-			miner.travelTo(this.miningSite);
+			miner.goTo(this.miningSite);
 		}
 	}
 

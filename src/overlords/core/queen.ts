@@ -3,15 +3,24 @@ import {Overlord} from '../Overlord';
 import {Hatchery} from '../../hiveClusters/hatchery';
 import {Zerg} from '../../Zerg';
 import {Tasks} from '../../tasks/Tasks';
-import {log} from '../../lib/logger/log';
+import {log} from '../../console/log';
 import {OverlordPriority} from '../../priorities/priorities_overlords';
 import {profile} from '../../profiler/decorator';
 import {CreepSetup} from '../CreepSetup';
+import {maxBy, minMax} from '../../utilities/utils';
+import {isResource} from '../../declarations/typeGuards';
 
 export const QueenSetup = new CreepSetup('queen', {
 	pattern  : [CARRY, CARRY, MOVE],
 	sizeLimit: 8,
 });
+
+type rechargeObjectType = StructureStorage
+	| StructureTerminal
+	| StructureContainer
+	| StructureLink
+	| Tombstone
+	| Resource;
 
 @profile
 export class HatcheryOverlord extends Overlord {
@@ -58,17 +67,30 @@ export class HatcheryOverlord extends Overlord {
 		} else if (this.hatchery.battery && !this.hatchery.battery.isEmpty) {
 			queen.task = Tasks.withdraw(this.hatchery.battery);
 		} else {
-			let rechargeTargets = _.compact([this.colony.storage!,
+			let rechargeObjects = _.compact([this.colony.storage!,
 											 this.colony.terminal!,
 											 this.colony.upgradeSite.link!,
 											 this.colony.upgradeSite.battery!,
+											 ...(this.colony.room.drops[RESOURCE_ENERGY] || []),
 											 ..._.map(this.colony.miningSites, site => site.output!),
-											 ..._.filter(this.colony.tombstones, ts => ts.store.energy > 0)]);
-			let target = queen.pos.findClosestByMultiRoomRange(_.filter(rechargeTargets,
-																		s => s.energy > queen.carryCapacity));
-			if (!target) target = queen.pos.findClosestByMultiRoomRange(_.filter(rechargeTargets, s => s.energy > 0));
+											 ...this.colony.tombstones]) as rechargeObjectType[];
+			rechargeObjects = _.filter(rechargeObjects, obj => isResource(obj) ? obj.amount > 0 : obj.energy > 0);
+			let target = maxBy(rechargeObjects, function (obj) {
+				let amount: number;
+				if (isResource(obj)) {
+					amount = obj.amount;
+				} else {
+					amount = obj.energy;
+				}
+				amount = minMax(amount, 0, queen.carryCapacity);
+				return amount / (queen.pos.getMultiRoomRangeTo(obj.pos) + 1);
+			});
 			if (target) {
-				queen.task = Tasks.withdraw(target);
+				if (target instanceof Resource) {
+					queen.task = Tasks.pickup(target);
+				} else {
+					queen.task = Tasks.withdraw(target);
+				}
 			} else {
 				log.warning(`No valid withdraw target for queen at ${queen.pos.print}!`);
 			}
@@ -120,7 +142,7 @@ export class HatcheryOverlord extends Overlord {
 		// 		}
 		// 	} else {
 		// 		// Otherwise, travel back to idle position
-		// 		queen.travelTo(this.idlePos);
+		// 		queen.goTo(this.idlePos);
 		// 	}
 		// }
 	}
@@ -134,9 +156,9 @@ export class HatcheryOverlord extends Overlord {
 				queen.run();
 			} else {
 				if (this.queens.length > 1) {
-					queen.travelTo(this.hatchery.idlePos, {range: 1});
+					queen.goTo(this.hatchery.idlePos, {range: 1});
 				} else {
-					queen.travelTo(this.hatchery.idlePos);
+					queen.goTo(this.hatchery.idlePos);
 				}
 			}
 		}

@@ -72,10 +72,6 @@ export class Tasks {
 		return new TaskGetRenewed(target, options);
 	}
 
-	// static goTo(target: goToTargetType, options = {} as TaskOptions): TaskGoTo {
-	// 	return new TaskGoTo(target, options);
-	// }
-
 	static goToRoom(target: goToRoomTargetType, options = {} as TaskOptions): TaskGoToRoom {
 		return new TaskGoToRoom(target, options);
 	}

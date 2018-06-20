@@ -3,6 +3,21 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+### Added
+- Added the `Movement` library, which will replace Traveler as the default method of moving creeps around in Overmind
+- Room planner updates:
+    - Room planner will now destroy or dismantle incorrectly-placed structures allowing you to change your room plan after it is built
+    - Finished support for bunkers
+
+### Changed
+- Workers now include dropped energy in list of objects they can recharge from and pick their recharge target more intelligently, accounting for other targeting workers
+
+### Fixed
+- Fixed a bug where mining sites could get clogged if invaders died on the container outputs and dropped minerals which would not get withdrawn
+- Room planner now correctly restores flag memories when reopening a session
+
+### Removed
+- Removed dependencies for `Traveler`, replacing with in-house `Movement` and `Pathing` libraries
 
 ## Overmind [0.4.1] - 2018.6.15
 
@@ -105,6 +120,9 @@ Finally, we now have a [feature request](https://github.com/bencbartlett/Overmin
 
 ### Fixed
 - Bugfix with workers being idle due to being unable to find a valid paving target
+
+### Removed
+- Removed `LabMineralType` directive as it is no longer relevant
 
 
 ## Overmind [0.3.0]: "Back to base-ics" - 2018.5.9

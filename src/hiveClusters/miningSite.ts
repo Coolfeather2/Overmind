@@ -5,11 +5,11 @@ import {profile} from '../profiler/decorator';
 import {MiningOverlord} from '../overlords/core/miner';
 import {Colony, ColonyStage} from '../Colony';
 import {Mem} from '../Memory';
-import {log} from '../lib/logger/log';
+import {log} from '../console/log';
 import {OverlordPriority} from '../priorities/priorities_overlords';
 import {Visualizer} from '../visuals/Visualizer';
 import {LogisticsNetwork} from '../logistics/LogisticsNetwork';
-import {Pathing} from '../pathing/Pathing';
+import {Pathing} from '../movement/Pathing';
 import {ROOMTYPE_CORE, ROOMTYPE_SOURCEKEEPER, WorldMap} from '../utilities/WorldMap';
 
 interface MiningSiteMemory {
@@ -35,7 +35,7 @@ export class MiningSite extends HiveCluster {
 	};
 
 	constructor(colony: Colony, source: Source) {
-		super(colony, source, 'miningSite');
+		super(colony, source, 'miningSite', true);
 		this.source = source;
 		this.energyPerTick = source.energyCapacity / ENERGY_REGEN_TIME;
 		this.miningPowerNeeded = Math.ceil(this.energyPerTick / HARVEST_POWER) + 1;
@@ -111,7 +111,7 @@ export class MiningSite extends HiveCluster {
 		if (this.output instanceof StructureContainer) {
 			let transportCapacity = 200 * this.colony.level;
 			let threshold = this.colony.stage > ColonyStage.Larva ? 0.8 : 0.5;
-			if (this.output.energy > threshold * transportCapacity) {
+			if (_.sum(this.output.store) > threshold * transportCapacity) {
 				this.colony.logisticsNetwork.requestOutputAll(this.output, {dAmountdt: this.energyPerTick});
 			}
 		} else if (this.output instanceof StructureLink) {
@@ -154,7 +154,7 @@ export class MiningSite extends HiveCluster {
 		}
 		if (originPos) {
 			let path = Pathing.findShortestPath(this.pos, originPos).path;
-			return path[0];
+			return _.find(path, pos => this.source.pos.getRangeTo(pos) == 1);
 		}
 	}
 
@@ -168,11 +168,7 @@ export class MiningSite extends HiveCluster {
 		}
 		if (originPos) {
 			let path = Pathing.findShortestPath(this.pos, originPos).path;
-			for (let pos of path) {
-				if (this.source.pos.getRangeTo(pos) == 2) {
-					return pos;
-				}
-			}
+			return _.find(path, pos => this.source.pos.getRangeTo(pos) == 2);
 		}
 	}
 
@@ -202,7 +198,8 @@ export class MiningSite extends HiveCluster {
 				}
 				let result = buildHere.createConstructionSite(structureType);
 				if (result != OK) {
-					log.error(`Mining site at ${this.pos.print}: cannot build output! Result: ${result}`);
+					log.error(`Mining site in ${this.room.print}: cannot build output of type ${structureType} ` +
+							  `at ${buildHere.print}! Result: ${result}`);
 				}
 			}
 		}

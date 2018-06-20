@@ -60,13 +60,10 @@ interface CreepMemory {
 	colony: string;
 	data: {
 		origin: string;
-		// replaceAt: number;
-		// boosts: { [resourceName: string]: boolean };
-		// moveSpeed?: number;
 	};
 	// Traveler components
-	// _travel: any;
 	_trav: TravelData | null;
+	_go?: MoveData;
 	// Combat
 	partner?: string;
 	retreating?: boolean;
@@ -95,7 +92,7 @@ interface FlagMemory {
 	amount?: number;
 	created?: number;
 	persistent?: boolean;
-	setPosition: RoomPosition;
+	// setPosition: RoomPosition;
 	rotation?: number;
 	colony?: string;
 	parent?: string;
@@ -168,7 +165,6 @@ interface OverseerMemory {
 interface OverlordMemory {
 
 }
-
 
 interface HatcheryMemory {
 	// idlePos?: protoPos;

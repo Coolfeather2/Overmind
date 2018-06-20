@@ -74,6 +74,7 @@ export class Colony {
 	nuker: StructureNuker | undefined;					// |
 	observer: StructureObserver | undefined;			// |
 	tombstones: Tombstone[]; 							// | Tombstones in all colony rooms
+	drops: { [resourceType: string]: Resource[] }; 		// | Dropped resources in all colony rooms
 	sources: Source[];									// | Sources in all colony rooms
 	extractors: StructureExtractor[];					// | All extractors in owned and remote rooms
 	flags: Flag[];										// | Flags assigned to the colony
@@ -180,6 +181,7 @@ export class Colony {
 								   extractor => extractor!.pos.getMultiRoomRangeTo(this.pos)) as StructureExtractor[];
 		this.constructionSites = _.flatten(_.map(this.rooms, room => room.constructionSites));
 		this.tombstones = _.flatten(_.map(this.rooms, room => room.tombstones));
+		this.drops = _.merge(_.map(this.rooms, room => room.drops));
 		this.repairables = _.flatten(_.map(this.rooms, room => room.repairables));
 		this.obstacles = [];
 	}
@@ -188,9 +190,8 @@ export class Colony {
 		this.level = this.controller.level as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 		this.bootstrapping = false;
 		this.isIncubating = false;
-		if (this.storage && this.storage.isActive() &&
-			this.spawns[0] && this.spawns[0].pos.findClosestByLimitedRange(this.room.containers, 2)) {
-			// If the colony has storage and a hatchery and a hatchery battery
+		if (this.storage && this.storage.isActive() && this.spawns[0]) {
+			// If the colony has storage and a hatchery
 			if (this.controller.level == 8) {
 				this.stage = ColonyStage.Adult;
 			} else {

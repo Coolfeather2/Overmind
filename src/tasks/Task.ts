@@ -9,11 +9,12 @@
  * 1. In main.ts:    import "./tasks/prototypes";
  * 2. As needed:    import {Tasks} from "<path to Tasks.ts>"
  *
- * If you use Travler, change all occurrences of creep.moveTo() to creep.travelTo()
+ * If you use Travler, change all occurrences of creep.moveTo() to creep.goTo()
  */
 
 import {initializeTask} from './initializer';
 import {profile} from '../profiler/decorator';
+import {Zerg} from '../Zerg';
 
 type targetType = { ref: string, pos: RoomPosition }; // overwrite this variable in derived classes to specify more precise typing
 
@@ -23,7 +24,7 @@ type targetType = { ref: string, pos: RoomPosition }; // overwrite this variable
  * to continue.*/
 
 @profile
-export abstract class Task implements ITask {
+export abstract class Task {
 
 	static taskName: string;
 
@@ -64,9 +65,11 @@ export abstract class Task implements ITask {
 		}
 		this._parent = null;
 		this.settings = {
-			targetRange: 1,		// range at which you can perform action
-			workOffRoad: false,	// whether work() should be performed off road
-			oneShot    : false, // remove this task once work() returns OK, regardless of validity
+			targetRange: 1,			// range at which you can perform action
+			workOffRoad: false,		// whether work() should be performed off road
+			oneShot    : false, 	// remove this task once work() returns OK, regardless of validity
+			timeout    : Infinity, 	// task becomes invalid after this long
+			blind      : true,  	// don't require vision of target unless in room
 		};
 		_.defaults(options, {
 			travelToOptions: {},
@@ -99,12 +102,12 @@ export abstract class Task implements ITask {
 	}
 
 	// Getter/setter for task.creep
-	get creep(): Creep { // Get task's own creep by its name
+	get creep(): Zerg { // Get task's own creep by its name
 		// Returns zerg wrapper instead of creep to use monkey-patched functions
-		return Game.zerg[this._creep.name] as Creep;
+		return Game.zerg[this._creep.name];
 	}
 
-	set creep(creep: Creep) {
+	set creep(creep: Zerg) {
 		this._creep.name = creep.name;
 		if (this._parent) {
 			this.parent!.creep = creep;
@@ -190,12 +193,12 @@ export abstract class Task implements ITask {
 	isValid(): boolean {
 		let validTask = false;
 		if (this.creep) {
-			validTask = this.isValidTask();
+			validTask = this.isValidTask() && Game.time - this.tick < this.settings.timeout;
 		}
 		let validTarget = false;
 		if (this.target) {
 			validTarget = this.isValidTarget();
-		} else if (this.options.blind && !Game.rooms[this.targetPos.roomName]) {
+		} else if ((this.settings.blind || this.options.blind) && !Game.rooms[this.targetPos.roomName]) {
 			// If you can't see the target's room but you have blind enabled, then that's okay
 			validTarget = true;
 		}
@@ -215,14 +218,14 @@ export abstract class Task implements ITask {
 		if (!this.options.travelToOptions!.range) {
 			this.options.travelToOptions!.range = range;
 		}
-		return this.creep.travelTo(this.targetPos, this.options.travelToOptions);
+		return this.creep.goTo(this.targetPos, this.options.travelToOptions);
 	}
 
 	/* Moves to the next position on the agenda if specified - call this in some tasks after work() is completed */
 	moveToNextPos(): number | undefined {
 		if (this.options.nextPos) {
 			let nextPos = derefRoomPosition(this.options.nextPos);
-			return this.creep.travelTo(nextPos);
+			return this.creep.goTo(nextPos);
 		}
 	}
 
@@ -234,7 +237,7 @@ export abstract class Task implements ITask {
 	}
 
 	// Execute this task each tick. Returns nothing unless work is done.
-	run(): number | void {
+	run(): number | undefined {
 		if (this.creep.pos.inRangeTo(this.targetPos, this.settings.targetRange) && !this.creep.pos.isEdge) {
 			if (this.settings.workOffRoad) {
 				// Move to somewhere nearby that isn't on a road
@@ -251,7 +254,7 @@ export abstract class Task implements ITask {
 	}
 
 	/* Bundled form of zerg.park(); adapted from BonzAI codebase*/
-	protected parkCreep(creep: Creep, pos: RoomPosition = creep.pos, maintainDistance = false): number {
+	protected parkCreep(creep: Zerg, pos: RoomPosition = creep.pos, maintainDistance = false): number {
 		let road = _.find(creep.pos.lookFor(LOOK_STRUCTURES), s => s.structureType == STRUCTURE_ROAD);
 		if (!road) return OK;
 
@@ -276,7 +279,7 @@ export abstract class Task implements ITask {
 			return creep.move(creep.pos.getDirectionTo(swampPosition));
 		}
 
-		return creep.travelTo(pos);
+		return creep.goTo(pos);
 	}
 
 	// Task to perform when at the target

@@ -2,7 +2,7 @@ import {getCutTiles} from '../algorithms/minCut';
 import {RoomPlanner} from './RoomPlanner';
 import {Colony} from '../Colony';
 import {Mem} from '../Memory';
-import {log} from '../lib/logger/log';
+import {log} from '../console/log';
 import {derefCoords} from '../utilities/utils';
 
 export interface BarrierPlannerMemory {
@@ -32,6 +32,26 @@ export class BarrierPlanner {
 
 	get memory(): BarrierPlannerMemory {
 		return Mem.wrap(this.colony.memory, 'barrierPlanner', memoryDefaults);
+	}
+
+	private computeBunkerBarrierPositions(bunkerPos: RoomPosition, upgradeSitePos: RoomPosition): RoomPosition[] {
+		let rectArray = [];
+		let padding = BarrierPlanner.settings.padding;
+		if (bunkerPos) {
+			let {x, y} = bunkerPos;
+			let [x1, y1] = [Math.max(x - 5 - padding, 0), Math.max(y - 5 - padding, 0)];
+			let [x2, y2] = [Math.min(x + 5 + padding, 49), Math.min(y + 5 + padding, 49)];
+			rectArray.push({x1: x1, y1: y1, x2: x2, y2: y2});
+		}
+		if (upgradeSitePos) {
+			let {x, y} = upgradeSitePos;
+			let [x1, y1] = [Math.max(x - 1, 0), Math.max(y - 1, 0)];
+			let [x2, y2] = [Math.min(x + 1, 49), Math.min(y + 1, 49)];
+			rectArray.push({x1: x1, y1: y1, x2: x2, y2: y2});
+		}
+		// Get Min cut
+		let barrierCoords = getCutTiles(this.colony.name, rectArray, false, 2, false);
+		return _.map(barrierCoords, coord => new RoomPosition(coord.x, coord.y, this.colony.name));
 	}
 
 	private computeBarrierPositions(hatcheryPos: RoomPosition, commandCenterPos: RoomPosition,
@@ -97,10 +117,10 @@ export class BarrierPlanner {
 			barrierPositions.push(derefCoords(coords, this.colony.name));
 		}
 		for (let pos of barrierPositions) {
-			if (count > 0 && RoomPlanner.shouldBuild(STRUCTURE_RAMPART, pos)) {
+			if (count > 0 && RoomPlanner.canBuild(STRUCTURE_RAMPART, pos)) {
 				let ret = pos.createConstructionSite(STRUCTURE_RAMPART);
 				if (ret != OK) {
-					log.error(`${this.colony.name}: couldn't create rampart site at ${pos.print}. Result: ${ret}`);
+					log.warning(`${this.colony.name}: couldn't create rampart site at ${pos.print}. Result: ${ret}`);
 				} else {
 					count--;
 				}
@@ -110,7 +130,10 @@ export class BarrierPlanner {
 
 	run(): void {
 		if (this.roomPlanner.active) {
-			if (this.roomPlanner.storagePos && this.roomPlanner.hatcheryPos) {
+			if (this.roomPlanner.bunkerPos) {
+				this.barrierPositions = this.computeBunkerBarrierPositions(this.roomPlanner.bunkerPos,
+																		   this.colony.controller.pos);
+			} else if (this.roomPlanner.storagePos && this.roomPlanner.hatcheryPos) {
 				this.barrierPositions = this.computeBarrierPositions(this.roomPlanner.hatcheryPos,
 																	 this.roomPlanner.storagePos,
 																	 this.colony.controller.pos);

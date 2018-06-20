@@ -4,8 +4,8 @@ import {HiveCluster} from './_HiveCluster';
 import {profile} from '../profiler/decorator';
 import {ExtractorOverlord} from '../overlords/core/extractor';
 import {Colony} from '../Colony';
-import {log} from '../lib/logger/log';
-import {Pathing} from '../pathing/Pathing';
+import {log} from '../console/log';
+import {Pathing} from '../movement/Pathing';
 import {OverlordPriority} from '../priorities/priorities_overlords';
 
 // interface MineralSiteMemory {
@@ -26,7 +26,7 @@ export class ExtractionSite extends HiveCluster {
 	overlord: ExtractorOverlord;
 
 	constructor(colony: Colony, extractor: StructureExtractor) {
-		super(colony, extractor, 'extractionSite');
+		super(colony, extractor, 'extractionSite', true);
 		this.extractor = extractor;
 		this.mineral = extractor.pos.lookFor(LOOK_MINERALS)[0];
 		// Register output method

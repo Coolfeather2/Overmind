@@ -4,8 +4,8 @@ import {Tasks} from '../../tasks/Tasks';
 import {Colony, ColonyStage} from '../../Colony';
 import {BufferTarget, LogisticsNetwork, LogisticsRequest} from '../../logistics/LogisticsNetwork';
 import {OverlordPriority} from '../../priorities/priorities_overlords';
-import {Pathing} from '../../pathing/Pathing';
-import {DirectiveLogisticsRequest} from '../../directives/logistics/logisticsRequest';
+import {Pathing} from '../../movement/Pathing';
+import {DirectivePickup} from '../../directives/logistics/logisticsRequest';
 import {profile} from '../../profiler/decorator';
 import {CreepSetup} from '../CreepSetup';
 
@@ -73,13 +73,9 @@ export class TransportOverlord extends Overlord {
 
 	init() {
 		let setup = this.colony.stage == ColonyStage.Larva ? TransporterEarlySetup : TransporterSetup;
-		let transportPower = _.sum(_.map(this.lifetimeFilter(this.transporters),
-										 creep => creep.getActiveBodyparts(CARRY)));
+		let transportPowerEach = setup.getBodyPotential(CARRY, this.colony);
 		let neededTransportPower = this.neededTransportPower();
-		if (transportPower < neededTransportPower) {
-			this.requestCreep(setup);
-		}
-		this.creepReport(setup.role, transportPower, neededTransportPower);
+		this.wishlist(Math.ceil(neededTransportPower / transportPowerEach), setup);
 	}
 
 	private handleTransporter(transporter: Zerg, request: LogisticsRequest | undefined) {
@@ -90,7 +86,7 @@ export class TransportOverlord extends Overlord {
 			let task = null;
 			let amount = this.logisticsGroup.predictedRequestAmount(transporter, request);
 			if (amount > 0) { // target needs refilling
-				if (request.target instanceof DirectiveLogisticsRequest) {
+				if (request.target instanceof DirectivePickup) {
 					task = Tasks.drop(request.target);
 				} else {
 					task = Tasks.transfer(request.target, request.resourceType);
@@ -106,7 +102,7 @@ export class TransportOverlord extends Overlord {
 					}
 				}
 			} else if (amount < 0) { // target needs withdrawal
-				if (request.target instanceof DirectiveLogisticsRequest) {
+				if (request.target instanceof DirectivePickup) {
 					let drops = request.target.drops[request.resourceType] || [];
 					let resource = drops[0];
 					if (resource) {
@@ -177,6 +173,13 @@ export class TransportOverlord extends Overlord {
 		this.handleTransporter(smolTransporter, bestRequestViaGreedy);
 	}
 
+	private pickupDroppedResources(transporter: Zerg) {
+		let droppedResources = transporter.pos.lookFor(LOOK_RESOURCES);
+		if (droppedResources && droppedResources[0]) {
+			transporter.pickup(droppedResources[0]);
+		}
+	}
+
 	run() {
 		for (let transporter of this.transporters) {
 			if (transporter.isIdle) {
@@ -188,6 +191,7 @@ export class TransportOverlord extends Overlord {
 				this.handleSmolTransporter(transporter);
 			}
 			transporter.run();
+			this.pickupDroppedResources(transporter);
 		}
 		// this.parkCreepsIfIdle(this.transporters);
 	}

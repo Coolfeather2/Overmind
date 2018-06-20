@@ -1,9 +1,11 @@
 import {profile} from './profiler/decorator';
 import {Colony} from './Colony';
 import {Overlord} from './overlords/Overlord';
-import {Task} from './tasks/Task';
 import {ManagerSetup} from './overlords/core/manager';
 import {QueenSetup} from './overlords/core/queen';
+import {initializeTask} from './tasks/initializer';
+import {Task} from './tasks/Task';
+import {Movement} from './movement/Movement';
 
 
 interface ParkingOptions {
@@ -122,18 +124,6 @@ export class Zerg {
 		return result;
 	}
 
-	moveByPath(path: PathStep[] | RoomPosition[] | string) {
-		let result = this.creep.moveByPath(path);
-		if (!this.actionLog.move) this.actionLog.move = (result == OK);
-		return result;
-	}
-
-	moveTo(target: RoomPosition | { pos: RoomPosition }, opts?: MoveToOpts) {
-		let result = this.creep.moveTo(target, opts);
-		if (!this.actionLog.move) this.actionLog.move = (result == OK);
-		return result;
-	}
-
 	notifyWhenAttacked(enabled: boolean) {
 		return this.creep.notifyWhenAttacked(enabled);
 	}
@@ -231,7 +221,7 @@ export class Zerg {
 		return result;
 	}
 
-	withdraw(target: Structure, resourceType: ResourceConstant, amount?: number) {
+	withdraw(target: Structure | Tombstone, resourceType: ResourceConstant, amount?: number) {
 		let result = this.creep.withdraw(target, resourceType, amount);
 		if (!this.actionLog.withdraw) this.actionLog.withdraw = (result == OK);
 		return result;
@@ -342,55 +332,56 @@ export class Zerg {
 	// Task logic ------------------------------------------------------------------------------------------------------
 
 	/* Wrapper for _task */
-	get task(): ITask | null {
-		// if (!this._task) {
-		// 	let protoTask = this.memory.task;
-		// 	this._task = protoTask ? initializeTask(protoTask) : null;
-		// }
-		// return this._task;
-		return this.creep.task;
+	get task(): Task | null {
+		if (!this._task) {
+			let protoTask = this.memory.task;
+			this._task = protoTask ? initializeTask(protoTask) : null;
+		}
+		return this._task;
 	}
 
 	/* Assign the creep a task with the setter, replacing creep.assign(Task) */
-	set task(task: ITask | null) {
-		// // Unregister target from old task if applicable
-		// let oldProtoTask = this.memory.task as protoTask;
-		// if (oldProtoTask) {
-		// 	let oldRef = oldProtoTask._target.ref;
-		// 	if (Overmind.cache.targets[oldRef]) {
-		// 		Overmind.cache.targets[oldRef] = _.remove(Overmind.cache.targets[oldRef], name => name == this.name);
-		// 	}
-		// }
-		// // Set the new task
-		// this.memory.task = task ? task.proto : null;
-		// if (task) {
-		// 	if (task.target) {
-		// 		// Register task target in cache if it is actively targeting something (excludes goTo and similar)
-		// 		if (!Overmind.cache.targets[task.target.ref]) {
-		// 			Overmind.cache.targets[task.target.ref] = [];
-		// 		}
-		// 		Overmind.cache.targets[task.target.ref].push(this.name);
-		// 	}
-		// 	// Register references to creep
-		// 	task.creep = this;
-		// 	this._task = task;
-		// }
-		this.creep.task = task;
+	set task(task: Task | null) {
+		// Unregister target from old task if applicable
+		let oldProtoTask = this.memory.task;
+		if (oldProtoTask) {
+			let oldRef = oldProtoTask._target.ref;
+			if (Overmind.cache.targets[oldRef]) {
+				_.remove(Overmind.cache.targets[oldRef], name => name == this.name);
+			}
+		}
+		// Set the new task
+		this.memory.task = task ? task.proto : null;
+		if (task) {
+			if (task.target) {
+				// Register task target in cache if it is actively targeting something (excludes goTo and similar)
+				if (!Overmind.cache.targets[task.target.ref]) {
+					Overmind.cache.targets[task.target.ref] = [];
+				}
+				Overmind.cache.targets[task.target.ref].push(this.name);
+			}
+			// Register references to creep
+			task.creep = this;
+		}
+		// Clear cache
+		this._task = null;
 	}
 
 	/* Does the creep have a valid task at the moment? */
 	get hasValidTask(): boolean {
-		return this.creep.hasValidTask;
+		return !!this.task && this.task.isValid();
 	}
 
 	/* Creeps are idle if they don't have a task. */
 	get isIdle(): boolean {
-		return this.creep.isIdle;
+		return !this.hasValidTask;
 	}
 
 	/* Execute the task you currently have. */
-	run(): number | void {
-		return this.creep.run();
+	run(): number | undefined {
+		if (this.task) {
+			return this.task.run();
+		}
 	}
 
 	// Colony association ----------------------------------------------------------------------------------------------
@@ -425,11 +416,9 @@ export class Zerg {
 
 	// Movement and location -------------------------------------------------------------------------------------------
 
-	travelTo(destination: RoomPosition | { pos: RoomPosition }, options: TravelToOptions = {}) {
+	goTo(destination: RoomPosition | { pos: RoomPosition }, options: MoveOptions = {}) {
 		// Add default obstacle avoidance
-		let result = this.creep.travelTo(destination, _.merge(options, {obstacles: this.getObstacles()}));
-		if (!this.actionLog.move) this.actionLog.move = (result == OK);
-		return result;
+		return Movement.goTo(this, destination, _.merge(options, {obstacles: this.getObstacles()}));
 	};
 
 	inSameRoomAs(target: HasPos): boolean {
@@ -445,88 +434,26 @@ export class Zerg {
 	}
 
 	park(pos: RoomPosition = this.pos, maintainDistance = false): number {
-		let road = this.pos.lookForStructure(STRUCTURE_ROAD);
-		if (!road) return OK;
-
-		let positions = _.sortBy(this.pos.availableNeighbors(), (p: RoomPosition) => p.getRangeTo(pos));
-		if (maintainDistance) {
-			let currentRange = this.pos.getRangeTo(pos);
-			positions = _.filter(positions, (p: RoomPosition) => p.getRangeTo(pos) <= currentRange);
-		}
-
-		let swampPosition;
-		for (let position of positions) {
-			if (position.lookForStructure(STRUCTURE_ROAD)) continue;
-			let terrain = position.lookFor(LOOK_TERRAIN)[0];
-			if (terrain === 'swamp') {
-				swampPosition = position;
-			} else {
-				return this.move(this.pos.getDirectionTo(position));
-			}
-		}
-
-		if (swampPosition) {
-			return this.move(this.pos.getDirectionTo(swampPosition));
-		}
-
-		return this.travelTo(pos);
+		return Movement.park(this, pos, maintainDistance);
 	}
 
 	/* Moves a creep off of the current tile to the first available neighbor */
 	moveOffCurrentPos(): ScreepsReturnCode | undefined {
-		let destinationPos = _.first(_.filter(this.pos.availableNeighbors(), pos => !pos.isEdge));
-		if (destinationPos) {
-			return this.move(this.pos.getDirectionTo(destinationPos));
-		}
+		return Movement.moveOffCurrentPos(this);
 	}
 
 	/* Moves onto an exit tile */
 	moveOnExit(): ScreepsReturnCode | undefined {
-		if (this.pos.rangeToEdge > 0 && this.fatigue == 0) {
-			let directions = [1, 3, 5, 7, 2, 4, 6, 8] as DirectionConstant[];
-			for (let direction of directions) {
-				let position = this.pos.getPositionAtDirection(direction);
-				let terrain = position.lookFor(LOOK_TERRAIN)[0];
-				if (terrain != 'wall' && position.rangeToEdge == 0) {
-					let outcome = this.move(direction);
-					return outcome;
-				}
-			}
-			console.log(`moveOnExit() assumes nearby exit tile, position: ${this.pos}`);
-			return ERR_NO_PATH;
-		}
+		return Movement.moveOnExit(this);
 	}
 
 	/* Moves off of an exit tile */
 	moveOffExit(avoidSwamp = true): ScreepsReturnCode {
-		let swampDirection;
-		let directions = [1, 3, 5, 7, 2, 4, 6, 8] as DirectionConstant[];
-		for (let direction of directions) {
-			let position = this.pos.getPositionAtDirection(direction);
-			if (position.rangeToEdge > 0 && position.isPassible()) {
-				let terrain = position.lookFor(LOOK_TERRAIN)[0];
-				if (avoidSwamp && terrain == 'swamp') {
-					swampDirection = direction;
-					continue;
-				}
-				return this.move(direction);
-			}
-		}
-		if (swampDirection) {
-			return this.move(swampDirection as DirectionConstant);
-		}
-		return ERR_NO_PATH;
+		return Movement.moveOffExit(this, avoidSwamp);
 	}
 
 	moveOffExitToward(pos: RoomPosition, detour = true): number | undefined {
-		for (let position of this.pos.availableNeighbors()) {
-			if (position.getRangeTo(pos) == 1) {
-				return this.travelTo(position);
-			}
-		}
-		if (detour) {
-			this.travelTo(pos, {ignoreCreeps: false});
-		}
+		return Movement.moveOffExitToward(this, pos, detour);
 	}
 
 	// Miscellaneous fun stuff -----------------------------------------------------------------------------------------
