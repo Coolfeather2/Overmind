@@ -1,7 +1,9 @@
-import {StructureLayout} from '../RoomPlanner';
+import {getAllStructureCoordsFromLayout, StructureLayout} from '../RoomPlanner';
+import {Colony} from '../../Colony';
+import {coordName} from '../../utilities/utils';
 
 
-export var bunkerLayout: StructureLayout = {
+export const bunkerLayout: StructureLayout = {
 	data: {anchor: {'x': 25, 'y': 25}},
 	1   : {
 		'name'     : 'bunkerCore',
@@ -458,3 +460,27 @@ export var bunkerLayout: StructureLayout = {
 		}
 	}
 };
+
+let _allBunkerCoords: { [rcl: number]: Coord[] } = {};
+for (let rcl of [1, 2, 3, 4, 5, 6, 7, 8]) {
+	if (bunkerLayout[rcl]!.buildings) {
+		_allBunkerCoords[rcl] = getAllStructureCoordsFromLayout(bunkerLayout, rcl);
+	}
+}
+export const allBunkerCoords = _allBunkerCoords;
+
+export const bunkerCoordLookup = _.mapValues(_allBunkerCoords,
+											 (coordArr: Coord[]) =>
+												 _.zipObject(_.map(coordArr,
+																   c => [coordName(c), true])
+												 )) as { [rcl: number]: { [coordName: string]: true | undefined } };
+
+export function insideBunkerBounds(pos: RoomPosition, colony: Colony): boolean {
+	if (colony.roomPlanner.memory.bunkerData && colony.roomPlanner.memory.bunkerData.anchor) {
+		let dx = bunkerLayout.data.anchor.x - colony.roomPlanner.memory.bunkerData.anchor.x;
+		let dy = bunkerLayout.data.anchor.y - colony.roomPlanner.memory.bunkerData.anchor.y;
+		let coord = {x: pos.x + dx, y: pos.y + dy};
+		return (!!bunkerCoordLookup[colony.level][coordName(coord)]);
+	}
+	return false;
+}
