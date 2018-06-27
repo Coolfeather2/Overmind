@@ -3,7 +3,7 @@ import {Task} from './Task';
 import {attackTargetType, attackTaskName, TaskAttack} from './instances/attack';
 import {buildTargetType, buildTaskName, TaskBuild} from './instances/build';
 import {claimTargetType, claimTaskName, TaskClaim} from './instances/claim';
-import { attackControllerTargetType, attackControllerTaskName, TaskAttackController } from './instances/attackController';
+//import { attackControllerTargetType, attackControllerTaskName, TaskAttackController } from './instances/attackController';
 import {dismantleTargetType, dismantleTaskName, TaskDismantle} from './instances/dismantle';
 import {fortifyTargetType, fortifyTaskName, TaskFortify} from './instances/fortify';
 import {getBoostedTargetType, getBoostedTaskName, TaskGetBoosted} from './instances/getBoosted';
@@ -45,9 +45,9 @@ export function initializeTask(protoTask: protoTask): Task {
 		case claimTaskName:
 			task = new TaskClaim(target as claimTargetType);
 			break;
-		case attackControllerTaskName:
-			task = new TaskAttackController(target as attackControllerTargetType);
-			break;
+		//case attackControllerTaskName:
+		//	task = new TaskAttackController(target as attackControllerTargetType);
+		//	break;
 		case dismantleTaskName:
 			task = new TaskDismantle(target as dismantleTargetType);
 			break;
