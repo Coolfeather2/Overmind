@@ -4,6 +4,10 @@ interface Creep {
 	boostCounts: { [boostType: string]: number };
 }
 
+interface ConstructionSite {
+	isWalkable: boolean;
+}
+
 interface Flag {
 	// recalculateColony(restrictDistance?: number): void;
 }
@@ -34,31 +38,37 @@ interface Room {
 	droppedEnergy: Resource[];
 	// droppedMinerals: Resource[];
 	droppedPower: Resource[];
-	structures: { [structureType: string]: Structure[] };
+	// Room structures
+	_refreshStructureCache
+	// Multiple structures
 	spawns: StructureSpawn[];
 	extensions: StructureExtension[];
-	extractor: StructureExtractor | undefined;
-	containers: StructureContainer[];
-	storageUnits: StorageUnit[];
-	towers: StructureTower[];
+	roads: StructureRoad[];
+	walls: StructureWall[];
+	constructedWalls: StructureWall[];
+	ramparts: StructureRampart[];
+	barriers: (StructureWall | StructureRampart)[];
+	keeperLairs: StructureKeeperLair[];
+	portals: StructurePortal[];
 	links: StructureLink[];
+	towers: StructureTower[];
 	labs: StructureLab[];
+	containers: StructureContainer[];
+	powerBanks: StructurePowerBank[];
+	// Single structures
+	observer: StructureObserver | undefined;
+	powerSpawn: StructurePowerSpawn | undefined;
+	extractor: StructureExtractor | undefined;
+	nuker: StructureNuker | undefined;
+	repairables: Structure[];
+
 	sources: Source[];
 	mineral: Mineral | undefined;
-	keeperLairs: StructureKeeperLair[];
-	roads: StructureRoad[];
-	repairables: Structure[];
 	constructionSites: ConstructionSite[];
-	barriers: (StructureWall | StructureRampart)[];
-	ramparts: StructureRampart[];
-	walls: StructureWall[];
 	// Used by movement library
 	_defaultMatrix: CostMatrix;
 	_creepMatrix: CostMatrix;
 	_skMatrix: CostMatrix;
-
-	getStructures(structureType: string): Structure[];
-
 }
 
 interface RoomObject {
@@ -74,6 +84,7 @@ interface RoomObject {
 
 interface RoomPosition {
 	print: string;
+	printPlain: string;
 	room: Room | undefined;
 	name: string;
 	coordName: string;
@@ -90,7 +101,7 @@ interface RoomPosition {
 
 	lookForStructure(structureType: StructureConstant): Structure | undefined;
 
-	isPassible(ignoreCreeps?: boolean): boolean;
+	isWalkable(ignoreCreeps?: boolean): boolean;
 
 	availableNeighbors(ignoreCreeps?: boolean): RoomPosition[];
 
@@ -123,7 +134,7 @@ interface RoomVisual {
 }
 
 interface Structure {
-	blocksMovement: boolean;
+	isWalkable: boolean;
 }
 
 interface StructureContainer {

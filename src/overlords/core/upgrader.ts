@@ -4,9 +4,10 @@ import {Zerg} from '../../Zerg';
 import {Tasks} from '../../tasks/Tasks';
 import {OverlordPriority} from '../../priorities/priorities_overlords';
 import {profile} from '../../profiler/decorator';
-import minBy from 'lodash.minby';
 import {Pathing} from '../../movement/Pathing';
 import {CreepSetup} from '../CreepSetup';
+import {boostResources} from '../../resources/map_resources';
+import {minBy} from '../../utilities/utils';
 
 class UpgraderSetup extends CreepSetup {
 	static role = 'upgrader';
@@ -31,11 +32,9 @@ export class UpgradingOverlord extends Overlord {
 		super(upgradeSite, 'upgrade', priority);
 		this.upgraders = this.creeps(UpgraderSetup.role);
 		this.upgradeSite = upgradeSite;
-		// if (this.room.name == 'E13S44') {
-		// 	this.boosts[UpgraderSetup.role] = [
-		// 		boostResources.upgrade[3]
-		// 	];
-		// }
+		if ((this.colony.assets[boostResources.upgrade[3]] || 0) > 3000) {
+			this.boosts[UpgraderSetup.role] = [boostResources.upgrade[3]];
+		}
 	}
 
 	init() {

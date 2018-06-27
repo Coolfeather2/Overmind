@@ -99,7 +99,6 @@ export class Colony {
 	level: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8; 				// Level of the colony's main room
 	stage: number;										// The stage of the colony "lifecycle"
 	defcon: number;
-	abandoning: boolean;
 	breached: boolean;
 	lowPowerMode: boolean; 								// Activate if RCL8 and full energy
 	layout: 'twoPart' | 'bunker';						// Which room design colony uses
@@ -153,7 +152,6 @@ export class Colony {
 		// Register colony overlords
 		this.spawnMoarOverlords();
 		// Add an Abathur
-		this.assets = this.getAllAssets();
 		this.abathur = new Abathur(this);
 		// Register colony globally to allow 'W1N1' and 'w1n1' to refer to Overmind.colonies.W1N1
 		global[this.name] = this;
@@ -172,14 +170,17 @@ export class Colony {
 		this.towers = this.room.towers;
 		this.labs = _.sortBy(_.filter(this.room.labs, lab => lab.my && lab.isActive()),
 							 lab => 50 * lab.pos.y + lab.pos.x); // Labs are sorted in reading order of positions
-		this.powerSpawn = this.room.getStructures(STRUCTURE_POWER_SPAWN)[0] as StructurePowerSpawn;
-		this.nuker = this.room.getStructures(STRUCTURE_NUKER)[0] as StructureNuker;
-		this.observer = this.room.getStructures(STRUCTURE_OBSERVER)[0] as StructureObserver;
+		this.powerSpawn = this.room.powerSpawn;
+		this.nuker = this.room.nuker;
+		this.observer = this.room.observer;
 		// Register physical objects across all rooms in the colony
 		this.sources = _.sortBy(_.flatten(_.map(this.rooms, room => room.sources)),
 								source => source.pos.getMultiRoomRangeTo(this.pos));
-		this.extractors = _.sortBy(_.compact(_.map(this.rooms, room => room.extractor)),
-								   extractor => extractor!.pos.getMultiRoomRangeTo(this.pos)) as StructureExtractor[];
+		this.extractors = _(this.rooms)
+			.map(room => room.extractor)
+			.compact()
+			.filter(extractor => (extractor!.my && extractor!.room.my) || extractor!.owner.username == 'Public')
+			.sortBy(extractor => extractor!.pos.getMultiRoomRangeTo(this.pos)).value() as StructureExtractor[];
 		this.constructionSites = _.flatten(_.map(this.rooms, room => room.constructionSites));
 		this.tombstones = _.flatten(_.map(this.rooms, room => room.tombstones));
 		this.drops = _.merge(_.map(this.rooms, room => room.drops));
@@ -236,8 +237,8 @@ export class Colony {
 		this.breached = (this.room.dangerousHostiles.length > 0 &&
 						 this.creeps.length == 0 &&
 						 !this.controller.safeMode);
-		// Ininitialize abandon property to false; directives can change this
-		this.abandoning = false;
+		// Register assets
+		this.assets = this.getAllAssets();
 	}
 
 	private registerUtilities(): void {
@@ -263,8 +264,10 @@ export class Colony {
 		if (this.spawns[0]) {
 			this.hatchery = new Hatchery(this, this.spawns[0]);
 		}
-		// Instantiate evolution chamber
-		if (this.terminal && this.terminal.isActive() && this.labs.length >= 3) {
+		// Instantiate evolution chamber once there are three labs all in range 2 of each other
+		if (this.terminal && this.terminal.isActive() &&
+			_.filter(this.labs,
+					 lab => _.all(this.labs, otherLab => lab.pos.inRangeTo(otherLab, 2))).length >= 3) {
 			this.evolutionChamber = new EvolutionChamber(this, this.terminal);
 		}
 		// Instantiate the upgradeSite
@@ -322,16 +325,15 @@ export class Colony {
 	}
 
 	init(): void {
-		this.overseer.init();												// Initialize overseer AFTER hive clusters
+		this.overseer.init();												// Initialize overseer before hive clusters
 		_.forEach(this.hiveClusters, hiveCluster => hiveCluster.init());	// Initialize each hive cluster
-		// this.overseer.init();												// Initialize overseer AFTER hive clusters
 		this.roadLogistics.init();											// Initialize the road network
 		this.linkNetwork.init();											// Initialize link network
 		this.roomPlanner.init();											// Initialize the room planner
 	}
 
 	run(): void {
-		this.overseer.run();												// Run overseer BEFORE hive clusters
+		this.overseer.run();												// Run overseer before hive clusters
 		_.forEach(this.hiveClusters, hiveCluster => hiveCluster.run());		// Run each hive cluster
 		this.linkNetwork.run();												// Run the link network
 		this.roadLogistics.run();											// Run the road network

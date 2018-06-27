@@ -14,12 +14,14 @@ import {DirectiveHealPoint} from './offense/healPoint';
 import {DirectiveGuardSwarm} from './defense/guardSwarm';
 import {DirectiveDestroy} from './offense/destroy';
 import {DirectiveInvasionDefense} from './defense/invasionDefense';
-import {DirectivePickup} from './logistics/logisticsRequest';
+// import {DirectivePickup} from './logistics/logisticsRequest';
 import {DirectiveHaul} from './logistics/haul';
 import {DirectiveDismantle} from './targeting/dismantle';
 import {DirectiveNukeResponse} from './defense/nukeResponse';
-import {DirectiveEvacuateTerminal} from './logistics/evacuateTerminal';
+import {DirectiveTerminalEmergencyState} from './logistics/terminalState_emergency';
 import {DirectiveRPBunker} from './roomPlanner/roomPlanner_bunker';
+import {DirectiveTerminalRebuildState} from './logistics/terminalState_rebuild';
+import {DirectiveTerminalEvacuateState} from './logistics/terminalState_evacuate';
 
 export function DirectiveWrapper(flag: Flag): Directive | undefined {
 	switch (flag.color) {
@@ -67,12 +69,14 @@ export function DirectiveWrapper(flag: Flag): Directive | undefined {
 		// Logistics directives ========================================================================================
 		case COLOR_YELLOW:
 			switch (flag.secondaryColor) {
-				case COLOR_YELLOW:
-					return new DirectivePickup(flag);
 				case COLOR_BLUE:
 					return new DirectiveHaul(flag);
+				case COLOR_ORANGE:
+					return new DirectiveTerminalEmergencyState(flag);
 				case COLOR_RED:
-					return new DirectiveEvacuateTerminal(flag);
+					return new DirectiveTerminalEvacuateState(flag);
+				case COLOR_BROWN:
+					return new DirectiveTerminalRebuildState(flag);
 			}
 			break;
 

@@ -18,6 +18,8 @@ declare namespace NodeJS {
 
 declare module 'screeps-profiler'; // I stopped using the typings for this because it was fucking up the Game typings
 
+declare module 'columnify';
+
 // If TS2451 gets thrown, change "declare let Game: Game;" to "declare var Game: Game;"
 // in typed-screeps index.d.ts file. (See issue #61 until the package is updated)
 interface Game {
@@ -29,11 +31,11 @@ interface Game {
 interface ICache {
 	overlords: { [overlord: string]: { [roleName: string]: string[] } };
 	targets: { [ref: string]: string[] };
-	structures: { [roomName: string]: { [structureType: string]: Structure[] } };
-	constructionSites: { [roomName: string]: ConstructionSite[] };
-	// structureSites: { [roomName: string]: ConstructionSite[] };
-	// roadSites: { [roomName: string]: ConstructionSite[] };
-	drops: { [roomName: string]: { [resourceType: string]: Resource[] } };
+	// structures: { [roomName: string]: { [structureType: string]: Structure[] } };
+	// constructionSites: { [roomName: string]: ConstructionSite[] };
+	// // structureSites: { [roomName: string]: ConstructionSite[] };
+	// // roadSites: { [roomName: string]: ConstructionSite[] };
+	// drops: { [roomName: string]: { [resourceType: string]: Resource[] } };
 
 	build(): void;
 
@@ -66,11 +68,19 @@ interface IOvermind {
 	visuals(): void;
 }
 
+
+interface TerminalState {
+	amounts: { [resourceType: string]: number },
+	tolerance: number
+}
+
 interface ITerminalNetwork {
 	terminals: StructureTerminal[];
 	memory: any;
 
 	requestResource(terminal: StructureTerminal, resourceType: ResourceConstant, amount: number): void;
+
+	registerTerminalState(terminal: StructureTerminal, state: TerminalState): void
 
 	init(): void;
 

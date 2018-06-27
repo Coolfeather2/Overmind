@@ -1,29 +1,28 @@
 import {profile} from '../../profiler/decorator';
 import {Directive} from '../Directive';
 import {log} from '../../console/log';
+import {TerminalState_Evacuate} from '../../logistics/TerminalNetwork';
 
 @profile
-export class DirectiveEvacuateTerminal extends Directive {
+export class DirectiveTerminalEvacuateState extends Directive {
 
-	static directiveName = 'evacuateTerminal';
+	static directiveName = 'evacuateState';
 	static color = COLOR_YELLOW;
 	static secondaryColor = COLOR_RED;
 
 	// colony: Colony | undefined; // this is technically unallowable, but at end of life, colony can be undefined
 
+	terminal: StructureTerminal | undefined;
+
 	constructor(flag: Flag) {
 		super(flag);
-		if (!this.colony) {
-			log.warning(`${this.name}@${this.pos.print}: no colony!`);
-			return;
-		} else if (this.room != this.colony.room) {
-			log.warning(`${this.name}@${this.pos.print}: must be placed in colony room!`);
-			return;
-		}
 		// Register abandon status
-		this.colony.abandoning = true;
+		this.terminal = this.pos.lookForStructure(STRUCTURE_TERMINAL) as StructureTerminal;
+		if (this.terminal) {
+			Overmind.terminalNetwork.registerTerminalState(this.terminal, TerminalState_Evacuate);
+		}
 		if (Game.time % 25 == 0) {
-			log.alert(`${this.pos.print}: terminal evacuation in progress!`);
+			log.alert(`${this.pos.print}: evacuation terminal state active!`);
 		}
 	}
 
@@ -33,7 +32,7 @@ export class DirectiveEvacuateTerminal extends Directive {
 
 	run() {
 		// Incubation directive gets removed once the colony has a command center (storage)
-		if (!this.colony) {
+		if (!this.colony || !this.terminal) {
 			this.remove();
 		}
 	}

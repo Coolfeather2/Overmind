@@ -13,6 +13,7 @@ import {BarrierPlanner} from './BarrierPlanner';
 import {BuildPriorities, DemolishStructurePriorities} from '../priorities/priorities_structures';
 import {bunkerLayout} from './layouts/bunker';
 import {DirectiveDismantle} from '../directives/targeting/dismantle';
+import {DirectiveTerminalRebuildState} from '../directives/logistics/terminalState_rebuild';
 
 export interface BuildingPlannerOutput {
 	name: string;
@@ -46,6 +47,7 @@ export interface RoomPlan {
 
 export interface PlannerMemory {
 	active: boolean;
+	relocating?: boolean;
 	recheckStructuresAt?: number;
 	bunkerData?: {
 		anchor: protoPos,
@@ -99,7 +101,7 @@ export class RoomPlanner {
 
 	static settings = {
 		recheckAfter      : 50,
-		siteCheckFrequency: 250,
+		siteCheckFrequency: 1000,
 		maxSitesPerColony : 10,
 		maxDismantleCount : 5,
 	};
@@ -345,7 +347,6 @@ export class RoomPlanner {
 								level = 8): RoomPosition[] {
 		let dx = anchor.x - bunkerLayout.data.anchor.x;
 		let dy = anchor.y - bunkerLayout.data.anchor.y;
-		let structureLayout = _.mapValues(bunkerLayout[level]!.buildings, obj => obj.pos) as { [s: string]: Coord[] };
 		return _.map(bunkerLayout[level]!.buildings[structureType].pos,
 					 coord => new RoomPosition(coord.x + dx, coord.y + dy, this.colony.name));
 	}
@@ -471,12 +472,12 @@ export class RoomPlanner {
 		} else if (structureType == STRUCTURE_EXTRACTOR) {
 			return pos.lookFor(LOOK_MINERALS).length > 0;
 		} else {
-			if (!this.map || this.map == {}) {
+			if (_.isEmpty(this.map)) {
 				this.recallMap();
 			}
 			let positions = this.map[structureType];
 			if (positions) {
-				let shouldBeHere = !!_.find(positions, p => p.isEqualTo(pos));
+				let shouldBeHere = (_.find(positions, p => p.isEqualTo(pos)) != undefined);
 				if (!shouldBeHere && (structureType == STRUCTURE_CONTAINER || structureType == STRUCTURE_LINK)) {
 					let thingsBuildingLinksAndContainers = _.compact([...this.colony.sources!,
 																	  this.colony.room.mineral!,
@@ -492,7 +493,14 @@ export class RoomPlanner {
 	}
 
 	/* Create construction sites for any buildings that need to be built */
-	private demolishMisplacedStructures(): void {
+	private demolishMisplacedStructures(skipBarriers = true): void {
+		// Start terminal evacuation if it needs to be moved
+		if (this.colony.terminal) {
+			if (this.colony.storage && !this.structureShouldBeHere(STRUCTURE_STORAGE, this.colony.storage.pos)
+				|| !this.structureShouldBeHere(STRUCTURE_TERMINAL, this.colony.terminal.pos)) {
+				DirectiveTerminalRebuildState.createIfNotPresent(this.colony.terminal.pos, 'pos');
+			}
+		}
 		// Max buildings that can be placed each tick
 		let count = RoomPlanner.settings.maxSitesPerColony - this.colony.constructionSites.length;
 		// Recall the appropriate map
@@ -503,8 +511,11 @@ export class RoomPlanner {
 		// Build missing structures from room plan
 		for (let priority of DemolishStructurePriorities) {
 			let structureType = priority.structureType;
+			if (skipBarriers && (structureType == STRUCTURE_RAMPART || structureType == STRUCTURE_WALL)) {
+				continue;
+			}
 			let maxRemoved = priority.maxRemoved || Infinity;
-			let shouldBreak = false;
+			let isRelocating = false;
 			let removeCount = 0;
 			let structures = _.filter(this.colony.room.find(FIND_STRUCTURES), s => s.structureType == structureType);
 			let dismantleCount = _.filter(structures,
@@ -512,22 +523,35 @@ export class RoomPlanner {
 														flag => DirectiveDismantle.filter(flag)).length > 0).length;
 			for (let structure of structures) {
 				if (!this.structureShouldBeHere(structureType, structure.pos)) {
-					log.info(`${this.colony.name}: demolishing ${structureType} at ${structure.pos.print}`);
-					shouldBreak = true;
+					// Don't remove the terminal until you have rebuilt storage
+					if (this.colony.level >= 6 && structureType == STRUCTURE_TERMINAL) {
+						if (!this.colony.storage) {
+							log.info(`${this.colony.name}: waiting until storage is built to remove terminal`);
+							return;
+						} else if (this.colony.terminal &&
+								   _.sum(this.colony.terminal.store) - this.colony.terminal.energy > 1000) {
+							log.info(`${this.colony.name}: waiting on resources to evacuate before removing terminal`);
+							return;
+						}
+					}
+					isRelocating = true;
 					let amountMissing = CONTROLLER_STRUCTURES[structureType][this.colony.level] - structures.length
 										+ removeCount + dismantleCount;
 					if (amountMissing < maxRemoved) {
 						if (priority.dismantle) {
-							if (dismantleCount < RoomPlanner.settings.maxDismantleCount) {
-								DirectiveDismantle.createIfNotPresent(structure.pos, 'pos');
-								dismantleCount++;
-								this.memory.recheckStructuresAt = Game.time + RoomPlanner.settings.recheckAfter;
+							if (dismantleCount < RoomPlanner.settings.maxDismantleCount) { // TODO: add back in
+								// log.info(`${this.colony.name}: dismantling ${structureType} at ${structure.pos.print}`);
+								// DirectiveDismantle.createIfNotPresent(structure.pos, 'pos');
+								// dismantleCount++;
+								// this.memory.recheckStructuresAt = Game.time + RoomPlanner.settings.recheckAfter;
 							}
 						} else {
 							let result = structure.destroy();
 							if (result != OK) {
 								log.warning(`${this.colony.name}: couldn't destroy structure of type ` +
 											`"${structureType}" at ${structure.pos.print}. Result: ${result}`);
+							} else {
+								log.info(`${this.colony.name}: destroyed ${structureType} at ${structure.pos.print}`);
 							}
 							removeCount++;
 							this.memory.recheckStructuresAt = Game.time + RoomPlanner.settings.recheckAfter;
@@ -535,8 +559,13 @@ export class RoomPlanner {
 					}
 				}
 			}
-			if (shouldBreak) break;
+			if (isRelocating && structureType != STRUCTURE_WALL && structureType != STRUCTURE_RAMPART) {
+				this.memory.relocating = true;
+				return;
+			}
 		}
+		// If you don't need to move anything, set relocating = false in memory
+		this.memory.relocating = false;
 	}
 
 	/* Create construction sites for any buildings that need to be built */
@@ -587,7 +616,7 @@ export class RoomPlanner {
 		} else {
 			if (Game.time % RoomPlanner.settings.siteCheckFrequency == this.colony.id ||
 				Game.time == (this.memory.recheckStructuresAt || Infinity)) {
-				this.demolishMisplacedStructures();
+				this.demolishMisplacedStructures(this.colony.layout == 'twoPart');
 			} else if (Game.time % RoomPlanner.settings.siteCheckFrequency == this.colony.id + 1 ||
 					   Game.time == (this.memory.recheckStructuresAt || Infinity) + 1) {
 				delete this.memory.recheckStructuresAt;

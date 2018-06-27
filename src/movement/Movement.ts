@@ -9,6 +9,7 @@ import {Pathing} from './Pathing';
 import {QueenSetup} from '../overlords/core/queen';
 import {TransporterSetup} from '../overlords/core/transporter';
 import {ManagerSetup} from '../overlords/core/manager';
+import {WorkerSetup} from '../overlords/core/worker';
 
 export const NO_ACTION = -20;
 
@@ -24,7 +25,13 @@ const STATE_DEST_X = 4;
 const STATE_DEST_Y = 5;
 const STATE_DEST_ROOMNAME = 6;
 
-const pushyRoles = _.map([ManagerSetup, QueenSetup, TransporterSetup], setup => setup.role);
+export const MovePriorities = {
+	[ManagerSetup.role]    : 1,
+	[QueenSetup.role]      : 2,
+	[TransporterSetup.role]: 3,
+	[WorkerSetup.role]     : 4,
+	default                : 10,
+};
 
 @profile
 export class Movement {
@@ -34,17 +41,16 @@ export class Movement {
 	/* Move a creep to a destination */
 	static goTo(creep: Zerg, destination: HasPos | RoomPosition, options: MoveOptions = {}): number {
 
-		_.defaults(options, {
-			pushy: pushyRoles.includes(creep.roleName),
-		});
-
-		destination = normalizePos(destination);
-		Pathing.updateRoomStatus(creep.room);
-
+		if (creep.spawning) {
+			return NO_ACTION;
+		}
 		if (creep.fatigue > 0) {
 			Movement.circle(creep.pos, 'aqua', .3);
 			return ERR_TIRED;
 		}
+
+		destination = normalizePos(destination);
+		Pathing.updateRoomStatus(creep.room);
 
 		// Fixes bug that causes creeps to idle on the other side of a room
 		let distanceToEdge = _.min([destination.x, 49 - destination.x, destination.y, 49 - destination.y]);
@@ -73,6 +79,8 @@ export class Movement {
 			creep.memory._go = {} as MoveData;
 		}
 		let moveData = creep.memory._go as MoveData;
+
+		// handle delay
 		if (moveData.delay != undefined) {
 			if (moveData.delay <= 0) {
 				delete moveData.delay;
@@ -88,16 +96,15 @@ export class Movement {
 		// this.circle(destination, "orange");
 
 		// check if creep is stuck
-		let pushedCreep;
+		let pushedCreep: boolean | undefined;
 		if (this.isStuck(creep, state)) {
 			state.stuckCount++;
-			this.circle(creep.pos, 'magenta', state.stuckCount * .2);
-			if (options.pushy) {
-				pushedCreep = this.pushCreep(creep, state.stuckCount >= 1);
-			}
+			this.circle(creep.pos, 'magenta', state.stuckCount * .3);
+			pushedCreep = this.pushCreep(creep);
 		} else {
 			state.stuckCount = 0;
 		}
+
 		// handle case where creep is stuck
 		if (!options.stuckValue) {
 			options.stuckValue = DEFAULT_STUCK_VALUE;
@@ -248,7 +255,7 @@ export class Movement {
 		let directions = [1, 3, 5, 7, 2, 4, 6, 8] as DirectionConstant[];
 		for (let direction of directions) {
 			let position = creep.pos.getPositionAtDirection(direction);
-			if (position.rangeToEdge > 0 && position.isPassible()) {
+			if (position.rangeToEdge > 0 && position.isWalkable()) {
 				let terrain = position.lookFor(LOOK_TERRAIN)[0];
 				if (avoidSwamp && terrain == 'swamp') {
 					swampDirection = direction;
@@ -276,18 +283,33 @@ export class Movement {
 	}
 
 	/* Push a blocking creep out of the way, switching positions */
-	static pushCreep(creep: Zerg, insist = true): boolean {
+	static pushCreep(creep: Zerg): boolean {
 		let nextDir = Pathing.nextDirectionInPath(creep);
-		if (!nextDir) return false;
+		if (nextDir == undefined) return false;
 
 		let nextPos = Pathing.positionAtDirection(creep.pos, nextDir);
 		if (!nextPos) return false;
 
 		let otherCreep = nextPos.lookFor(LOOK_CREEPS)[0];
-		if (!otherCreep) return false;
+		if (!otherCreep || !otherCreep.memory || !otherCreep.my) return false;
 
-		let otherData = otherCreep.memory._go as MoveData;
-		if (!insist && otherData && otherData.path && otherData.path.length > 1) {
+		let otherData = otherCreep.memory._go as MoveData | undefined;
+		let otherCreepIsMoving = otherData && otherData.path && otherData.path.length > 1;
+		let priority;
+		if (creep.memory._go && creep.memory._go.priority) {
+			priority = creep.memory._go.priority;
+		} else {
+			priority = MovePriorities[creep.roleName] || MovePriorities.default;
+		}
+		let otherPriority;
+		if (otherData && otherData.priority) {
+			otherPriority = otherData.priority;
+		} else {
+			otherPriority = MovePriorities[otherCreep.memory.role] || MovePriorities.default;
+		}
+
+		// Do nothing if other creep has better or equal priority and is still moving
+		if (otherCreepIsMoving && priority >= otherPriority) { // lower priority value is better
 			return false;
 		}
 

@@ -13,9 +13,9 @@ import {DirectiveGuardSwarm} from './directives/defense/guardSwarm';
 import {DirectiveInvasionDefense} from './directives/defense/invasionDefense';
 import {Mem} from './Memory';
 import {DirectiveNukeResponse} from './directives/defense/nukeResponse';
-import {DirectiveEvacuateTerminal} from './directives/logistics/evacuateTerminal';
 import {MinerSetup} from './overlords/core/miner';
 import {QueenSetup} from './overlords/core/queen';
+import {DirectiveTerminalEvacuateState} from './directives/logistics/terminalState_evacuate';
 
 @profile
 export class Overseer {
@@ -23,6 +23,10 @@ export class Overseer {
 	directives: Directive[];					// Directives across the colony
 	overlords: {
 		[priority: number]: Overlord[]
+	};
+
+	static settings = {
+		minEnergyForRequest: 200,
 	};
 
 	constructor(colony: Colony) {
@@ -42,6 +46,27 @@ export class Overseer {
 		this.overlords[overlord.priority].push(overlord);
 	}
 
+	private registerLogisticsRequests(): void {
+		// Register logistics requests for all dropped resources and tombstones
+		for (let room of this.colony.rooms) {
+			// Pick up all nontrivial dropped resources
+			for (let resourceType in room.drops) {
+				for (let drop of room.drops[resourceType]) {
+					if (drop.amount > Overseer.settings.minEnergyForRequest || drop.resourceType != RESOURCE_ENERGY) {
+						this.colony.logisticsNetwork.requestOutput(drop);
+					}
+				}
+			}
+		}
+		// Place a logistics request directive for every tombstone with non-empty store that isn't on a container
+		for (let tombstone of this.colony.tombstones) {
+			if (_.sum(tombstone.store) > Overseer.settings.minEnergyForRequest
+				|| _.sum(tombstone.store) > tombstone.store.energy) {
+				this.colony.logisticsNetwork.requestOutput(tombstone, {resourceType: 'all'});
+			}
+		}
+	}
+
 	/* Place new event-driven flags where needed to be instantiated on the next tick */
 	private placeDirectives(): void {
 		// Bootstrap directive: in the event of catastrophic room crash, enter emergency spawn mode.
@@ -55,25 +80,6 @@ export class Overseer {
 				// this.colony.hatchery.settings.suppressSpawning = true;
 			}
 		}
-
-		// TODO: figure out what's causing these bugs
-		// // Register logistics requests for all dropped resources and tombstones
-		// for (let room of this.colony.rooms) {
-		// 	// Pick up all nontrivial dropped resources
-		// 	for (let resourceType in room.drops) {
-		// 		for (let drop of room.drops[resourceType]) {
-		// 			if (drop.amount > 200 || drop.resourceType != RESOURCE_ENERGY) {
-		// 				DirectivePickup.createIfNotPresent(drop.pos, 'pos', {quiet: true});
-		// 			}
-		// 		}
-		// 	}
-		// }
-		// // Place a logistics request directive for every tombstone with non-empty store that isn't on a container
-		// for (let tombstone of this.colony.tombstones) {
-		// 	if (_.sum(tombstone.store) > 0 && !tombstone.pos.lookForStructure(STRUCTURE_CONTAINER)) {
-		// 		DirectivePickup.createIfNotPresent(tombstone.pos, 'pos', {quiet: true});
-		// 	}
-		// }
 
 		// Guard directive: defend your outposts and all rooms of colonies that you are incubating
 		let roomsToCheck = _.flattenDeep([this.colony.outposts,
@@ -106,7 +112,7 @@ export class Overseer {
 
 		// Place an abandon directive in case room has been breached to prevent terminal robbing
 		// if (this.colony.breached && this.colony.terminal) {
-		// 	DirectiveEvacuateTerminal.createIfNotPresent(this.colony.terminal.pos, 'room');
+		// 	DirectiveTerminalEmergencyState.createIfNotPresent(this.colony.terminal.pos, 'room');
 		// }
 	}
 
@@ -124,7 +130,7 @@ export class Overseer {
 				let ret = this.colony.controller.activateSafeMode();
 				if (ret != OK && !this.colony.controller.safeMode) {
 					if (this.colony.terminal) {
-						DirectiveEvacuateTerminal.createIfNotPresent(this.colony.terminal.pos, 'room');
+						DirectiveTerminalEvacuateState.createIfNotPresent(this.colony.terminal.pos, 'room');
 					}
 				}
 				return;
@@ -138,7 +144,7 @@ export class Overseer {
 				let ret = this.colony.controller.activateSafeMode();
 				if (ret != OK && !this.colony.controller.safeMode) {
 					if (this.colony.terminal) {
-						DirectiveEvacuateTerminal.createIfNotPresent(this.colony.terminal.pos, 'room');
+						DirectiveTerminalEvacuateState.createIfNotPresent(this.colony.terminal.pos, 'room');
 					}
 				}
 				return;
@@ -162,6 +168,8 @@ export class Overseer {
 				overlord.init();
 			}
 		}
+		// Register cleanup requests to logistics network
+		this.registerLogisticsRequests();
 	}
 
 	// Operation =======================================================================================================

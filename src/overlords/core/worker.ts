@@ -45,8 +45,8 @@ export class WorkerOverlord extends Overlord {
 			3: 3000,
 			4: 10000,
 			5: 100000,
-			6: 1000000,
-			7: 10000000,
+			6: 500000,
+			7: 5000000,
 			8: 30000000,
 		},
 		barrierLowHighHits: 100000,
@@ -58,7 +58,9 @@ export class WorkerOverlord extends Overlord {
 		this.rechargeObjects = [];
 		// Fortification structures
 		this.fortifyStructures = _.sortBy(_.filter(this.room.barriers, s =>
-			s.hits < WorkerOverlord.settings.barrierHits[this.colony.level]), s => s.hits);
+			s.hits < WorkerOverlord.settings.barrierHits[this.colony.level]
+			&& this.colony.roomPlanner.barrierPlanner.barrierShouldBeHere(s.pos)
+		), s => s.hits);
 		// Generate a list of structures needing repairing (different from fortifying except in critical case)
 		this.repairStructures = _.filter(this.colony.repairables, function (structure) {
 			if (structure.structureType == STRUCTURE_CONTAINER) {
@@ -76,11 +78,13 @@ export class WorkerOverlord extends Overlord {
 		let homeRoomName = this.colony.room.name;
 		let defcon = this.colony.defcon;
 		// Filter constructionSites to only build valid ones
-		let roomStructureAmounts = _.mapValues(this.colony.room.structures, s => s.length) as { [type: string]: number };
+		let room = this.colony.room as any;
 		let level = this.colony.controller.level;
 		this.constructionSites = _.filter(this.colony.constructionSites, function (site) {
 			// If site will be more than max amount of a structure at current level, ignore (happens after downgrade)
-			if (roomStructureAmounts[site.structureType] + 1 > CONTROLLER_STRUCTURES[site.structureType][level]) {
+			let structureAmount = room[site.structureType + 's'] ? room[site.structureType + 's'].length :
+								  (room[site.structureType] ? 1 : 0);
+			if (structureAmount >= CONTROLLER_STRUCTURES[site.structureType][level]) {
 				return false;
 			}
 			if (defcon > DEFCON.safe) {
@@ -98,11 +102,6 @@ export class WorkerOverlord extends Overlord {
 				}
 			}
 		});
-		// Nuke defense response
-		// this.nukeDefenseSites = _.filter(this.colony.room.constructionSites,
-		// 								 site => site.pos.findInRange(FIND_NUKES, 3).length > 0);
-		// let nukeRamparts = _.filter(this.colony.room.ramparts,
-		// 							rampart => rampart.pos.findInRange(FIND_NUKES, 3).length > 0);
 		// Nuke defense ramparts needing fortification
 		this.nukeDefenseRamparts = _.filter(this.colony.room.ramparts, function (rampart) {
 			if (rampart.pos.lookFor(LOOK_NUKES).length > 0) {
@@ -132,7 +131,11 @@ export class WorkerOverlord extends Overlord {
 			this.wishlist(Math.min(numWorkers, MAX_WORKERS), setup);
 		} else {
 			// At higher levels, spawn workers based on construction and repair that needs to be done
-			const MAX_WORKERS = 4; // Maximum number of workers to spawn
+			if (this.colony.roomPlanner.memory.relocating) {
+				const RELOCATE_MAX_WORKERS = 6;
+				this.wishlist(RELOCATE_MAX_WORKERS, setup);
+			}
+			const MAX_WORKERS = 3; // Maximum number of workers to spawn
 			let constructionTicks = _.sum(_.map(this.colony.constructionSites,
 												site => Math.max(site.progressTotal - site.progress, 0)))
 									/ BUILD_POWER; // Math.max for if you manually set progress on private server
@@ -181,7 +184,16 @@ export class WorkerOverlord extends Overlord {
 		let roomToRepave = this.colony.roadLogistics.workerShouldRepave(worker)!;
 		this.colony.roadLogistics.registerWorkerAssignment(worker, roomToRepave);
 		let target = worker.pos.findClosestByMultiRoomRange(this.colony.roadLogistics.repairableRoads(roomToRepave));
-		if (target) worker.task = Tasks.repair(target);
+		if (target) {
+			let nextTarget = target.pos.findClosestByRange(this.colony.roadLogistics.repairableRoads(roomToRepave), {
+				filter: (nextTarg: StructureRoad) => nextTarg.ref != target.ref
+			}) as StructureRoad | undefined;
+			if (nextTarget) {
+				worker.task = Tasks.repair(target, {nextPos: nextTarget.pos});
+			} else {
+				worker.task = Tasks.repair(target);
+			}
+		}
 	}
 
 	private fortifyActions(worker: Zerg, fortifyStructures = this.fortifyStructures) {
