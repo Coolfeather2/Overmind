@@ -1,5 +1,5 @@
-import {SourceMapConsumer} from 'source-map';
 import {profile} from '../profiler/decorator';
+import {color} from '../utilities/utils';
 
 export enum LogLevels {
 	ERROR,		// log.level = 0
@@ -10,9 +10,9 @@ export enum LogLevels {
 }
 
 /**
- * Debug level for log output
+ * Default debug level for log output
  */
-export const LOG_LEVEL: number = LogLevels.DEBUG;
+export const LOG_LEVEL: number = LogLevels.INFO;
 
 /**
  * Prepend log output with current tick number.
@@ -50,6 +50,8 @@ export const LOG_VSC_URL_TEMPLATE = (path: string, line: string) => {
 
 // <caller> (<source>:<line>:<column>)
 const stackLineRe = /([^ ]*) \(([^:]*):([0-9]*):([0-9]*)\)/;
+const FATAL = -1;
+const fatalColor = '#d65156';
 
 interface SourcePos {
 	compiled: string;
@@ -90,10 +92,6 @@ function makeVSCLink(pos: SourcePos): string {
 	return link(vscUrl(pos.path, `L${pos.line.toString()}`), pos.original);
 }
 
-function color(str: string, color: string): string {
-	return `<font color='${color}'>${str}</font>`;
-}
-
 function tooltip(str: string, tooltip: string): string {
 	return `<abbr title='${tooltip}'>${str}</abbr>`;
 }
@@ -110,24 +108,33 @@ function time(): string {
 	return color(Game.time.toString(), 'gray');
 }
 
+export function debug(thing: { name: string, memory: any, pos: RoomPosition }, ...args: any[]) {
+	if (thing.memory && thing.memory.debug) {
+		this.debug(`${thing.name} @ ${thing.pos.print}: `, args);
+	}
+}
+
+/**
+ * Log provides methods for displaying pretty-printed text into the Screeps console
+ */
 @profile
 export class Log {
 	public static sourceMap: any;
 
 	public static loadSourceMap() {
-		try {
-			// tslint:disable-next-line
-			const map = require('main.js.map');
-			if (map) {
-				Log.sourceMap = new SourceMapConsumer(map);
-			}
-		} catch (err) {
-			console.log('failed to load source map', err);
-		}
+		// try {
+		// 	// tslint:disable-next-line
+		// 	const map = require('main.js.map');
+		// 	if (map) {
+		// 		Log.sourceMap = new SourceMapConsumer(map);
+		// 	}
+		// } catch (err) {
+		console.log('Source mapping deprecated.');
+		// }
 	}
 
 	public get level(): number {
-		return Memory.log.level;
+		return Memory.settings.log.level;
 	}
 
 	public setLogLevel(value: number) {
@@ -155,34 +162,36 @@ export class Log {
 				break;
 		}
 		if (changeValue) {
-			Memory.log.level = value;
+			Memory.settings.log.level = value;
 		}
 	}
 
 	public get showSource(): boolean {
-		return Memory.log.showSource;
+		return Memory.settings.log.showSource;
 	}
 
 	public set showSource(value: boolean) {
-		Memory.log.showSource = value;
+		Memory.settings.log.showSource = value;
 	}
 
 	public get showTick(): boolean {
-		return Memory.log.showTick;
+		return Memory.settings.log.showTick;
 	}
 
 	public set showTick(value: boolean) {
-		Memory.log.showTick = value;
+		Memory.settings.log.showTick = value;
 	}
 
 	private _maxFileString: number = 0;
 
 	constructor() {
 		_.defaultsDeep(Memory, {
-			log: {
-				level     : LOG_LEVEL,
-				showSource: LOG_PRINT_LINES,
-				showTick  : LOG_PRINT_TICK,
+			settings: {
+				log: {
+					level     : LOG_LEVEL,
+					showSource: LOG_PRINT_LINES,
+					showTick  : LOG_PRINT_TICK,
+				}
 			}
 		});
 	}
@@ -195,33 +204,53 @@ export class Log {
 		return this;
 	}
 
-	public error(...args: any[]) {
+	public throw(e: Error) {
+		console.log.apply(this, this.buildArguments(FATAL).concat([color(e.toString(), fatalColor)]));
+	}
+
+	public error(...args: any[]): undefined {
 		if (this.level >= LogLevels.ERROR) {
 			console.log.apply(this, this.buildArguments(LogLevels.ERROR).concat([].slice.call(args)));
 		}
+		return undefined;
 	}
 
-	public warning(...args: any[]) {
+	public warning(...args: any[]): undefined {
 		if (this.level >= LogLevels.WARNING) {
 			console.log.apply(this, this.buildArguments(LogLevels.WARNING).concat([].slice.call(args)));
 		}
+		return undefined;
 	}
 
-	public alert(...args: any[]) {
+	public alert(...args: any[]): undefined {
 		if (this.level >= LogLevels.ALERT) {
 			console.log.apply(this, this.buildArguments(LogLevels.ALERT).concat([].slice.call(args)));
 		}
+		return undefined;
 	}
 
-	public info(...args: any[]) {
+	public notify(message: string): undefined {
+		this.alert(message);
+		Game.notify(message);
+		return undefined;
+	}
+
+	public info(...args: any[]): undefined {
 		if (this.level >= LogLevels.INFO) {
 			console.log.apply(this, this.buildArguments(LogLevels.INFO).concat([].slice.call(args)));
 		}
+		return undefined;
 	}
 
 	public debug(...args: any[]) {
 		if (this.level >= LogLevels.DEBUG) {
 			console.log.apply(this, this.buildArguments(LogLevels.DEBUG).concat([].slice.call(args)));
+		}
+	}
+
+	public debugCreep(creep: { name: string, memory: any, pos: RoomPosition }, ...args: any[]) {
+		if (creep.memory && creep.memory.debug) {
+			this.debug(`${creep.name} @ ${creep.pos.print}: `, args);
 		}
 	}
 
@@ -264,6 +293,9 @@ export class Log {
 				break;
 			case LogLevels.DEBUG:
 				out.push(color('DEBUG  ', 'gray'));
+				break;
+			case FATAL:
+				out.push(color('FATAL  ', fatalColor));
 				break;
 			default:
 				break;

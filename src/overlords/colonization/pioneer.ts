@@ -1,58 +1,77 @@
 import {Overlord} from '../Overlord';
-import {Zerg} from '../../Zerg';
+import {Zerg} from '../../zerg/Zerg';
 import {Tasks} from '../../tasks/Tasks';
-import {Directive} from '../../directives/Directive';
 import {OverlordPriority} from '../../priorities/priorities_overlords';
 import {profile} from '../../profiler/decorator';
-import {CreepSetup} from '../CreepSetup';
+import {Roles, Setups} from '../../creepSetups/setups';
+import {DirectiveColonize} from '../../directives/colony/colonize';
+import {Pathing} from '../../movement/Pathing';
+import {log} from '../../console/log';
 
-const PioneerSetup = new CreepSetup('pioneer', {
-	pattern  : [WORK, CARRY, MOVE, MOVE],
-	sizeLimit: Infinity,
-});
-
+/**
+ * Spawn pioneers - early workers which help to build a spawn in a new colony, then get converted to workers or drones
+ */
 @profile
 export class PioneerOverlord extends Overlord {
 
 	pioneers: Zerg[];
 	spawnSite: ConstructionSite | undefined;
 
-	constructor(directive: Directive, priority = OverlordPriority.realTime.pioneer) {
+	constructor(directive: DirectiveColonize, priority = OverlordPriority.colonization.pioneer) {
 		super(directive, 'pioneer', priority);
-		this.pioneers = this.creeps(PioneerSetup.role);
+		this.pioneers = this.zerg(Roles.pioneer);
+		this.spawnSite = this.room ? _.filter(this.room.constructionSites,
+											  s => s.structureType == STRUCTURE_SPAWN)[0] : undefined;
+	}
+
+	refresh() {
+		super.refresh();
 		this.spawnSite = this.room ? _.filter(this.room.constructionSites,
 											  s => s.structureType == STRUCTURE_SPAWN)[0] : undefined;
 	}
 
 	init() {
-		this.wishlist(4, PioneerSetup);
+		this.wishlist(4, Setups.pioneer);
+	}
+
+	private findStructureBlockingController(pioneer: Zerg): Structure | undefined {
+		let blockingPos = Pathing.findBlockingPos(pioneer.pos, pioneer.room.controller!.pos,
+												  _.filter(pioneer.room.structures, s => !s.isWalkable));
+		if (blockingPos) {
+			let structure = blockingPos.lookFor(LOOK_STRUCTURES)[0];
+			if (structure) {
+				return structure;
+			} else {
+				log.error(`${this.print}: no structure at blocking pos ${blockingPos.print}! (Why?)`);
+			}
+		}
 	}
 
 	private handlePioneer(pioneer: Zerg): void {
 		// Ensure you are in the assigned room
 		if (pioneer.room == this.room && !pioneer.pos.isEdge) {
-			// Harvest if out of energy
+			// Remove any blocking structures preventing claimer from reaching controller
+			if (!this.room.my && this.room.structures.length > 0) {
+				let dismantleTarget = this.findStructureBlockingController(pioneer);
+				if (dismantleTarget) {
+					pioneer.task = Tasks.dismantle(dismantleTarget);
+					return;
+				}
+			}
+			// Build and recharge
 			if (pioneer.carry.energy == 0) {
-				let availableSources = _.filter(this.room.sources,
-												s => s.energy > 0 && s.pos.availableNeighbors().length > 0);
-				let target = pioneer.pos.findClosestByRange(availableSources);
-				if (target) pioneer.task = Tasks.harvest(target);
+				pioneer.task = Tasks.recharge();
 			} else if (this.spawnSite) {
 				pioneer.task = Tasks.build(this.spawnSite);
 			}
 		} else {
 			// pioneer.task = Tasks.goTo(this.pos);
-			pioneer.goTo(this.pos, {ensurePath: true, preferHighway: true});
+			pioneer.goTo(this.pos, {ensurePath: true, avoidSK: true});
 		}
 	}
 
 	run() {
-		for (let pioneer of this.pioneers) {
-			if (pioneer.isIdle) {
-				this.handlePioneer(pioneer);
-			}
-			pioneer.run();
-		}
+		this.autoRun(this.pioneers, pioneer => this.handlePioneer(pioneer));
 	}
 }
 

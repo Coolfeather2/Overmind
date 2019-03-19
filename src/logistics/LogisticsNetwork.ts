@@ -1,9 +1,5 @@
-// Logistics Group: efficiently partners resource requests with transporters using a stable matching algorithm to
-// provide general-purpose resource transport. For a better explanation of how this system works, see my blog post:
-// https://bencbartlett.wordpress.com/2018/03/28/screeps-4-hauling-is-np-hard/
-
 import {profile} from '../profiler/decorator';
-import {Zerg} from '../Zerg';
+import {Zerg} from '../zerg/Zerg';
 import {log} from '../console/log';
 import {Pathing} from '../movement/Pathing';
 import {Colony} from '../Colony';
@@ -16,11 +12,10 @@ import {
 	isTombstone,
 	StoreStructure
 } from '../declarations/typeGuards';
-// import {DirectivePickup} from '../directives/logistics/logisticsRequest';
-import {Mem} from '../Memory';
-import {TransporterSetup} from '../overlords/core/transporter';
 import {minMax} from '../utilities/utils';
 import columnify from 'columnify';
+import {Mem} from '../memory/Memory';
+import {Roles} from '../creepSetups/setups';
 
 export type LogisticsTarget =
 	EnergyStructure
@@ -30,7 +25,6 @@ export type LogisticsTarget =
 	| StructurePowerSpawn
 	| Tombstone
 	| Resource;
-// | DirectivePickup// | Zerg;
 
 export const ALL_RESOURCE_TYPE_ERROR =
 				 `Improper logistics request: 'all' can only be used for store structure or tombstone!`;
@@ -67,12 +61,17 @@ const LogisticsNetworkMemoryDefaults: LogisticsNetworkMemory = {
 	transporterCache: {},
 };
 
+/**
+ * Logistics network: efficiently partners resource requests with transporters using a stable matching algorithm to
+ * provide general-purpose resource transport. For a better explanation of how this system works, see my blog post:
+ * https://bencbartlett.wordpress.com/2018/03/28/screeps-4-hauling-is-np-hard/
+ */
 @profile
 export class LogisticsNetwork {
 
 	memory: LogisticsNetworkMemory;
 	requests: LogisticsRequest[];
-	transporters: Zerg[];
+	// transporters: Zerg[];
 	buffers: BufferTarget[];
 	colony: Colony;
 	private targetToRequest: { [targetRef: string]: number };
@@ -81,12 +80,13 @@ export class LogisticsNetwork {
 	private cache: {
 		nextAvailability: { [transporterName: string]: [number, RoomPosition] },
 		predictedTransporterCarry: { [transporterName: string]: StoreDefinition },
-		resourceChangeRate: { [requestID: string]: { [transporterName: string]: number } }
+		resourceChangeRate: { [requestID: string]: { [transporterName: string]: number } },
 	};
 	static settings = {
-		flagDropAmount      : 1000,
-		rangeToPathHeuristic: 1.1, 	// findClosestByRange * this ~= findClosestByPos except in pathological cases
-		carryThreshold      : 800, 	// only do stable matching on transporters at least this big (RCL4+)
+		flagDropAmount        : 1000,
+		rangeToPathHeuristic  : 1.1, 	// findClosestByRange * this ~= findClosestByPos except in pathological cases
+		carryThreshold        : 800, 	// only do stable matching on transporters at least this big (RCL4+)
+		droppedEnergyThreshold: 200,	// ignore dropped energy below this amount
 	};
 
 	constructor(colony: Colony) {
@@ -94,9 +94,9 @@ export class LogisticsNetwork {
 		this.requests = [];
 		this.targetToRequest = {};
 		this.colony = colony;
-		this.transporters = _.filter(colony.getCreepsByRole(TransporterSetup.role),
-									 creep => !creep.spawning &&
-											  creep.carryCapacity >= LogisticsNetwork.settings.carryThreshold);
+		// this.transporters = _.filter(colony.getCreepsByRole(TransporterSetup.role),
+		// 							 creep => !creep.spawning &&
+		// 									  creep.carryCapacity >= LogisticsNetwork.settings.carryThreshold);
 		this.buffers = _.compact([colony.storage!, colony.terminal!]);
 		this.cache = {
 			nextAvailability         : {},
@@ -109,9 +109,23 @@ export class LogisticsNetwork {
 		// }
 	}
 
+	refresh(): void {
+		this.memory = Mem.wrap(this.colony.memory, 'logisticsNetwork', LogisticsNetworkMemoryDefaults);
+		this.requests = [];
+		this.targetToRequest = {};
+		this._matching = undefined;
+		this.cache = {
+			nextAvailability         : {},
+			predictedTransporterCarry: {},
+			resourceChangeRate       : {}
+		};
+	}
+
 	// Request and provide functions ===================================================================================
 
-	/* Request for resources to be deposited into this target */
+	/**
+	 * Request for resources to be deposited into this target
+	 */
 	requestInput(target: LogisticsTarget, opts = {} as RequestOptions): void {
 		_.defaults(opts, {
 			resourceType: RESOURCE_ENERGY,
@@ -143,7 +157,9 @@ export class LogisticsNetwork {
 		this.targetToRequest[req.target.ref] = requestID;
 	}
 
-	/* Request for resources to be withdrawn from this target */
+	/**
+	 * Request for resources to be withdrawn from this target
+	 */
 	requestOutput(target: LogisticsTarget, opts = {} as RequestOptions): void {
 		_.defaults(opts, {
 			resourceType: RESOURCE_ENERGY,
@@ -174,7 +190,9 @@ export class LogisticsNetwork {
 		this.targetToRequest[req.target.ref] = requestID;
 	}
 
-	/* Requests output for every mineral in a requestor object */
+	/**
+	 * Requests output for every mineral in a requestor object
+	 */
 	requestOutputMinerals(target: StoreStructure, opts = {} as RequestOptions): void {
 		for (let resourceType in target.store) {
 			if (resourceType == RESOURCE_ENERGY) continue;
@@ -307,7 +325,9 @@ export class LogisticsNetwork {
 		}
 	}
 
-	/* Number of ticks until the transporter is available and where it will be */
+	/**
+	 * Number of ticks until the transporter is available and where it will be
+	 */
 	private nextAvailability(transporter: Zerg): [number, RoomPosition] {
 		if (!this.cache.nextAvailability[transporter.name]) {
 			this.cache.nextAvailability[transporter.name] = this.computeNextAvailability(transporter);
@@ -316,14 +336,16 @@ export class LogisticsNetwork {
 	}
 
 	static targetingTransporters(target: LogisticsTarget, excludedTransporter?: Zerg): Zerg[] {
-		let targetingZerg = _.map(target.targetedBy, name => Game.zerg[name]);
-		let targetingTransporters = _.filter(targetingZerg, zerg => zerg.roleName == TransporterSetup.role);
+		const targetingZerg = _.map(target.targetedBy, name => Overmind.zerg[name]);
+		const targetingTransporters = _.filter(targetingZerg, zerg => zerg.roleName == Roles.transport);
 		if (excludedTransporter) _.remove(targetingTransporters,
 										  transporter => transporter.name == excludedTransporter.name);
 		return targetingTransporters;
 	}
 
-	/* Returns the predicted state of the transporter's carry after completing its current task */
+	/**
+	 * Returns the predicted state of the transporter's carry after completing its current task
+	 */
 	private computePredictedTransporterCarry(transporter: Zerg,
 											 nextAvailability?: [number, RoomPosition]): StoreDefinition {
 		if (transporter.task && transporter.task.target) {
@@ -365,7 +387,9 @@ export class LogisticsNetwork {
 		return transporter.carry;
 	}
 
-	/* Returns the predicted state of the transporter's carry after completing its task */
+	/**
+	 * Returns the predicted state of the transporter's carry after completing its task
+	 */
 	private predictedTransporterCarry(transporter: Zerg): StoreDefinition {
 		if (!this.cache.predictedTransporterCarry[transporter.name]) {
 			this.cache.predictedTransporterCarry[transporter.name] = this.computePredictedTransporterCarry(transporter);
@@ -373,7 +397,9 @@ export class LogisticsNetwork {
 		return this.cache.predictedTransporterCarry[transporter.name];
 	}
 
-	/* Returns the effective amount that a transporter will see upon arrival, accounting for other targeting creeps */
+	/**
+	 * Returns the effective amount that a transporter will see upon arrival, accounting for other targeting creeps
+	 */
 	predictedRequestAmount(transporter: Zerg, request: LogisticsRequest,
 						   nextAvailability?: [number, RoomPosition]): number {
 		// Figure out when/where the transporter will be free
@@ -419,7 +445,9 @@ export class LogisticsNetwork {
 
 	// Functions for computing resource change rate ====================================================================
 
-	/* Consider all possibilities of buffer structures to visit on the way to fulfilling the request */
+	/**
+	 * Consider all possibilities of buffer structures to visit on the way to fulfilling the request
+	 */
 	bufferChoices(transporter: Zerg, request: LogisticsRequest): {
 		dQ: number,			// Absolute value of amount of resource transported with the choice
 		dt: number,			// Amount of time to execute the choice
@@ -482,7 +510,7 @@ export class LogisticsNetwork {
 			// Change in resources if transporter drops off resources at a buffer first
 			for (let buffer of this.buffers) {
 				let dQ_buffer = Math.min(Math.abs(amount), transporter.carryCapacity,
-					buffer.storeCapacity - _.sum(buffer.store));
+										 buffer.storeCapacity - _.sum(buffer.store));
 				let dt_buffer = newPos.getMultiRoomRangeTo(buffer.pos) * LogisticsNetwork.settings.rangeToPathHeuristic
 								+ Pathing.distance(buffer.pos, request.target.pos) + ticksUntilFree;
 				choices.push({
@@ -511,7 +539,9 @@ export class LogisticsNetwork {
 		return choices;
 	}
 
-	/* Compute the best possible value of |dResource / dt| */
+	/**
+	 * Compute the best possible value of |dResource / dt|
+	 */
 	private resourceChangeRate(transporter: Zerg, request: LogisticsRequest): number {
 		if (!this.cache.resourceChangeRate[request.id]) {
 			this.cache.resourceChangeRate[request.id] = {};
@@ -524,29 +554,37 @@ export class LogisticsNetwork {
 		return this.cache.resourceChangeRate[request.id][transporter.name];
 	}
 
-	/* Generate requestor preferences in terms of transporters */
+	/**
+	 * Generate requestor preferences in terms of transporters
+	 */
 	requestPreferences(request: LogisticsRequest, transporters: Zerg[]): Zerg[] {
 		// Requestors priortize transporters by change in resources per tick until pickup/delivery
 		return _.sortBy(transporters, transporter => -1 * this.resourceChangeRate(transporter, request)); // -1 -> desc
 	}
 
-	/* Generate transporter preferences in terms of store structures */
+	/**
+	 * Generate transporter preferences in terms of store structures
+	 */
 	transporterPreferences(transporter: Zerg): LogisticsRequest[] {
 		// Transporters prioritize requestors by change in resources per tick until pickup/delivery
 		return _.sortBy(this.requests, request => -1 * this.resourceChangeRate(transporter, request)); // -1 -> desc
 	}
 
-	/* Invalidates relevant portions of the cache once a transporter is assigned to a task */
+	/**
+	 * Invalidates relevant portions of the cache once a transporter is assigned to a task
+	 */
 	invalidateCache(transporter: Zerg, request: LogisticsRequest): void {
 		delete this.cache.nextAvailability[transporter.name];
 		delete this.cache.predictedTransporterCarry[transporter.name];
 		delete this.cache.resourceChangeRate[request.id][transporter.name];
 	}
 
-	/* Logs the output of the stable matching result */
+	/**
+	 * Logs the output of the stable matching result
+	 */
 	summarizeMatching(): void {
 		let requests = this.requests.slice();
-		let transporters = _.filter(this.colony.getCreepsByRole(TransporterSetup.role), creep => !creep.spawning);
+		let transporters = _.filter(this.colony.getCreepsByRole(Roles.transport), creep => !creep.spawning);
 		let unmatchedTransporters = _.remove(transporters,
 											 transporter => !_.keys(this._matching).includes(transporter.name));
 		let unmatchedRequests = _.remove(requests, request => !_.values(this._matching).includes(request));
@@ -568,7 +606,9 @@ export class LogisticsNetwork {
 		console.log();
 	}
 
-	/* Logs the current state of the logistics group to the console; useful for debugging */
+	/**
+	 * Logs the current state of the logistics group to the console; useful for debugging
+	 */
 	summarize(): void {
 		// console.log(`Summary of logistics group for ${this.colony.name} at time ${Game.time}`);
 		let info = [];
@@ -612,7 +652,7 @@ export class LogisticsNetwork {
 		}
 		console.log('Requests: \n' + columnify(info) + '\n');
 		info = [];
-		for (let transporter of this.colony.getCreepsByRole(TransporterSetup.role)) {
+		for (let transporter of this.colony.overlords.logistics.transporters) {
 			let task = transporter.task ? transporter.task.name : 'none';
 			let target = transporter.task ?
 						 transporter.task.proto._target.ref + ' ' + transporter.task.targetPos.printPlain : 'none';
@@ -630,12 +670,14 @@ export class LogisticsNetwork {
 
 	get matching(): { [creepName: string]: LogisticsRequest | undefined } {
 		if (!this._matching) {
-			this._matching = this.stableMatching(this.transporters);
+			this._matching = this.stableMatching(this.colony.overlords.logistics.transporters);
 		}
 		return this._matching;
 	}
 
-	/* Generate a stable matching of transporters to requests with Gale-Shapley algorithm */
+	/**
+	 * Generate a stable matching of transporters to requests with Gale-Shapley algorithm
+	 */
 	private stableMatching(transporters: Zerg[]): { [creepName: string]: LogisticsRequest | undefined } {
 		let tPrefs: { [transporterName: string]: string[] } = {};
 		for (let transporter of transporters) {

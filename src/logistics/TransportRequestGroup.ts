@@ -23,15 +23,28 @@ interface TransportRequestOptions {
 	resourceType?: ResourceConstant;
 }
 
+
+/**
+ * Transport request groups handle close-range prioritized resource requests, in contrast to the logistics network,
+ * which handles longer-ranged requests
+ */
 @profile
 export class TransportRequestGroup {
 
 	supply: { [priority: number]: TransportRequest[] };
 	withdraw: { [priority: number]: TransportRequest[] };
+	supplyByID: { [id: string]: TransportRequest[] };
+	withdrawByID: { [id: string]: TransportRequest[] };
 
 	constructor() {
+		this.refresh();
+	}
+
+	refresh(): void {
 		this.supply = blankPriorityQueue();
 		this.withdraw = blankPriorityQueue();
+		this.supplyByID = {};
+		this.withdrawByID = {};
 	}
 
 	get needsSupplying(): boolean {
@@ -66,17 +79,19 @@ export class TransportRequestGroup {
 				} else {
 					searchRequests = requests[priority];
 				}
-				return _.find(searchRequests, request => request.target.ref == target.ref);
+				return _.find(searchRequests, request => request.target.ref == target!.ref);
 			}
 		}
 	}
 
-	/* Request for resources to be deposited into this target */
+	/**
+	 * Request for resources to be deposited into this target
+	 */
 	requestInput(target: TransportRequestTarget, priority = Priority.Normal, opts = {} as TransportRequestOptions): void {
 		_.defaults(opts, {
 			resourceType: RESOURCE_ENERGY,
 		});
-		if (!opts.amount) {
+		if (opts.amount == undefined) {
 			opts.amount = this.getInputAmount(target, opts.resourceType!);
 		}
 		// Register the request
@@ -87,15 +102,19 @@ export class TransportRequestGroup {
 		};
 		if (opts.amount > 0) {
 			this.supply[priority].push(req);
+			if (!this.supplyByID[target.id]) this.supplyByID[target.id] = [];
+			this.supplyByID[target.id].push(req);
 		}
 	}
 
-	/* Request for resources to be withdrawn from this target */
+	/**
+	 * Request for resources to be withdrawn from this target
+	 */
 	requestOutput(target: TransportRequestTarget, priority = Priority.Normal, opts = {} as TransportRequestOptions): void {
 		_.defaults(opts, {
 			resourceType: RESOURCE_ENERGY,
 		});
-		if (!opts.amount) {
+		if (opts.amount == undefined) {
 			opts.amount = this.getOutputAmount(target, opts.resourceType!);
 		}
 		// Register the request
@@ -106,19 +125,21 @@ export class TransportRequestGroup {
 		};
 		if (opts.amount > 0) {
 			this.withdraw[priority].push(req);
+			if (!this.withdrawByID[target.id]) this.withdrawByID[target.id] = [];
+			this.withdrawByID[target.id].push(req);
 		}
 	}
 
-	/* Makes a provide for every resourceType in a requestor object */
-	requestOutputAll(target: StoreStructure, priority = Priority.Normal, opts = {} as TransportRequestOptions): void {
-		for (let resourceType in target.store) {
-			let amount = target.store[<ResourceConstant>resourceType] || 0;
-			if (amount > 0) {
-				opts.resourceType = <ResourceConstant>resourceType;
-				this.requestOutput(target, priority, opts);
-			}
-		}
-	}
+	// /* Makes a provide for every resourceType in a requestor object */
+	// requestOutputAll(target: StoreStructure, priority = Priority.Normal, opts = {} as TransportRequestOptions): void {
+	// 	for (let resourceType in target.store) {
+	// 		let amount = target.store[<ResourceConstant>resourceType] || 0;
+	// 		if (amount > 0) {
+	// 			opts.resourceType = <ResourceConstant>resourceType;
+	// 			this.requestOutput(target, priority, opts);
+	// 		}
+	// 	}
+	// }
 
 	private getInputAmount(target: TransportRequestTarget, resourceType: ResourceConstant): number {
 		if (isStoreStructure(target)) {
@@ -180,19 +201,28 @@ export class TransportRequestGroup {
 		return 0;
 	}
 
-	summarize(): void {
-		console.log(`Supply requests:`);
+	/**
+	 * Summarize the state of the transport request group to the console; useful for debugging.
+	 */
+	summarize(ignoreEnergy = false): void {
+		console.log(`Supply requests ==========================`);
 		for (let priority in this.supply) {
-			console.log(`Priority: ${priority}`);
+			if (this.supply[priority].length > 0) {
+				console.log(`Priority: ${priority}`);
+			}
 			for (let request of this.supply[priority]) {
+				if (ignoreEnergy && request.resourceType == RESOURCE_ENERGY) continue;
 				console.log(`    targetID: ${request.target.ref}  amount: ${request.amount}  ` +
 							`resourceType: ${request.resourceType}`);
 			}
 		}
-		console.log(`Withdraw requests:`);
+		console.log(`Withdraw requests ========================`);
 		for (let priority in this.withdraw) {
-			console.log(`Priority: ${priority}`);
+			if (this.withdraw[priority].length > 0) {
+				console.log(`Priority: ${priority}`);
+			}
 			for (let request of this.withdraw[priority]) {
+				if (ignoreEnergy && request.resourceType == RESOURCE_ENERGY) continue;
 				console.log(`    targetID: ${request.target.ref}  amount: ${request.amount}  ` +
 							`resourceType: ${request.resourceType}`);
 			}

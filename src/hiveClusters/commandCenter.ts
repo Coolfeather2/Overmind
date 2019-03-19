@@ -1,22 +1,29 @@
-// Command center: groups many RCL8 components, storge, lab, terminal, and some towers
-
 import {HiveCluster} from './_HiveCluster';
 import {profile} from '../profiler/decorator';
 import {CommandCenterOverlord} from '../overlords/core/manager';
 import {Colony} from '../Colony';
-import {Mem} from '../Memory';
-import {Visualizer} from '../visuals/Visualizer';
+import {Mem} from '../memory/Memory';
 import {TerminalNetwork} from '../logistics/TerminalNetwork';
-import {Energetics} from '../logistics/Energetics';
 import {TransportRequestGroup} from '../logistics/TransportRequestGroup';
 import {Priority} from '../priorities/priorities';
+import {Cartographer} from '../utilities/Cartographer';
+import {$} from '../caching/GlobalCache';
+import {Visualizer} from '../visuals/Visualizer';
+import {Abathur} from '../resources/Abathur';
+
+export const MAX_OBSERVE_DISTANCE = 7;
 
 interface CommandCenterMemory {
 	idlePos?: protoPos
 }
 
+/**
+ * The command center groups the high-level structures at the core of the bunker together, including storage, terminal,
+ * link, power spawn, observer, and nuker.
+ */
 @profile
 export class CommandCenter extends HiveCluster {
+
 	memory: CommandCenterMemory;
 	storage: StructureStorage;								// The colony storage, also the instantiation object
 	link: StructureLink | undefined;						// Link closest to storage
@@ -27,13 +34,14 @@ export class CommandCenter extends HiveCluster {
 	nuker: StructureNuker | undefined;						// Colony nuker
 	observer: StructureObserver | undefined;				// Colony observer
 	transportRequests: TransportRequestGroup;				// Box for energy requests
+
+	private observeRoom: string | undefined;
 	private _idlePos: RoomPosition;							// Cached idle position
-	settings: {												// Settings for cluster operation
-		linksTransmitAt: number;
-		refillTowersBelow: number;  							// What value to refill towers at?
-		excessEnergyTransferSize: number; 						// How much excess energy does a terminal send at once
-		managerSize: number;									// Size of manager in body pattern repetition units
-		unloadStorageBuffer: number;							// Start sending energy to other rooms past this amount
+
+	static settings = {
+		enableIdleObservation: true,
+		linksTransmitAt      : LINK_CAPACITY - 100,
+		refillTowersBelow    : 750,
 	};
 
 	constructor(colony: Colony, storage: StructureStorage) {
@@ -41,31 +49,43 @@ export class CommandCenter extends HiveCluster {
 		this.memory = Mem.wrap(this.colony.memory, 'commandCenter');
 		// Register physical components
 		this.storage = storage;
-		this.link = this.pos.findClosestByLimitedRange(colony.availableLinks, 2);
-		this.colony.linkNetwork.claimLink(this.link);
 		this.terminal = colony.terminal;
-		this.terminalNetwork = Overmind.terminalNetwork as TerminalNetwork;
-		this.towers = this.pos.findInRange(colony.towers, 3);
-		// this.labs = colony.labs;
 		this.powerSpawn = colony.powerSpawn;
 		this.nuker = colony.nuker;
 		this.observer = colony.observer;
-		this.colony.obstacles.push(this.idlePos);
-		this.transportRequests = new TransportRequestGroup();
-		this.settings = {
-			linksTransmitAt         : LINK_CAPACITY - 100,
-			refillTowersBelow       : 500,
-			excessEnergyTransferSize: 100000,
-			managerSize             : 8,
-			unloadStorageBuffer     : 900000,
-		};
-		if (this.storage.isActive() && this.link && this.link.isActive()) {
+		if (this.colony.bunker) {
+			this.link = this.colony.bunker.anchor.findClosestByLimitedRange(colony.availableLinks, 1);
+			this.colony.linkNetwork.claimLink(this.link);
+			this.towers = this.colony.bunker.anchor.findInRange(colony.towers, 1);
+		} else {
+			this.link = this.pos.findClosestByLimitedRange(colony.availableLinks, 2);
+			this.colony.linkNetwork.claimLink(this.link);
+			this.towers = this.pos.findInRange(colony.towers, 3);
+		}
+		this.terminalNetwork = Overmind.terminalNetwork as TerminalNetwork;
+		this.transportRequests = new TransportRequestGroup(); // commandCenter always gets its own request group
+		this.observeRoom = undefined;
+	}
+
+	refresh() {
+		this.memory = Mem.wrap(this.colony.memory, 'commandCenter');
+		$.refreshRoom(this);
+		$.refresh(this, 'storage', 'terminal', 'powerSpawn', 'nuker', 'observer', 'link', 'towers');
+		this.transportRequests.refresh();
+		this.observeRoom = undefined;
+	}
+
+	spawnMoarOverlords() {
+		if (this.link || this.terminal) {
 			this.overlord = new CommandCenterOverlord(this);
 		}
 	}
 
 	// Idle position
 	get idlePos(): RoomPosition {
+		if (this.colony.bunker) {
+			return this.colony.bunker.anchor;
+		}
 		if (!this.memory.idlePos || Game.time % 25 == 0) {
 			this.memory.idlePos = this.findIdlePos();
 		}
@@ -88,7 +108,7 @@ export class CommandCenter extends HiveCluster {
 	/* Register a link transfer store if the link is sufficiently full */
 	private registerLinkTransferRequests(): void {
 		if (this.link) {
-			if (this.link.energy > this.settings.linksTransmitAt) {
+			if (this.link.energy > CommandCenter.settings.linksTransmitAt) {
 				this.colony.linkNetwork.requestTransmit(this.link);
 			}
 		}
@@ -105,19 +125,28 @@ export class CommandCenter extends HiveCluster {
 			}
 		}
 		// Refill towers as needed with variable priority
-		let refillTowers = _.filter(this.towers, tower => tower.energy < this.settings.refillTowersBelow);
+		let refillTowers = _.filter(this.towers, tower => tower.energy < CommandCenter.settings.refillTowersBelow);
 		_.forEach(refillTowers, tower => this.transportRequests.requestInput(tower, Priority.High));
-		// Refill terminal if it is below threshold
-		if (this.terminal && this.terminal.energy < Energetics.settings.terminal.energy.inThreshold) {
-			this.transportRequests.requestInput(this.terminal, Priority.NormalHigh);
+
+		// Refill core spawn (only applicable to bunker layouts)
+		if (this.colony.bunker && this.colony.bunker.coreSpawn) {
+			if (this.colony.bunker.coreSpawn.energy < this.colony.bunker.coreSpawn.energyCapacity) {
+				this.transportRequests.requestInput(this.colony.bunker.coreSpawn, Priority.Normal);
+			}
 		}
 		// Refill power spawn
 		if (this.powerSpawn && this.powerSpawn.energy < this.powerSpawn.energyCapacity) {
-			this.transportRequests.requestInput(this.powerSpawn, Priority.Normal);
+			this.transportRequests.requestInput(this.powerSpawn, Priority.NormalLow);
 		}
 		// Refill nuker with low priority
-		if (this.nuker && this.nuker.energy < this.nuker.energyCapacity && this.storage.energy > 100000) {
-			this.transportRequests.requestInput(this.nuker, Priority.Low);
+		if (this.nuker) {
+			if (this.nuker.energy < this.nuker.energyCapacity && this.storage.energy > 200000) {
+				this.transportRequests.requestInput(this.nuker, Priority.Low);
+			}
+			if (this.nuker.ghodium < this.nuker.ghodiumCapacity
+				&& (this.colony.assets[RESOURCE_GHODIUM] || 0) >= 2 * Abathur.settings.maxBatchSize) {
+				this.transportRequests.requestInput(this.nuker, Priority.Low, {resourceType: RESOURCE_GHODIUM});
+			}
 		}
 
 		// Withdraw requests:
@@ -130,6 +159,23 @@ export class CommandCenter extends HiveCluster {
 		}
 	}
 
+	requestRoomObservation(roomName: string) {
+		this.observeRoom = roomName;
+	}
+
+	private runObserver(): void {
+		if (this.observer) {
+			if (this.observeRoom) {
+				this.observer.observeRoom(this.observeRoom);
+			} else if (CommandCenter.settings.enableIdleObservation) {
+				let dx = Game.time % MAX_OBSERVE_DISTANCE;
+				let dy = Game.time % (MAX_OBSERVE_DISTANCE ** 2);
+				let roomToObserve = Cartographer.findRelativeRoomName(this.pos.roomName, dx, dy);
+				this.observer.observeRoom(roomToObserve);
+			}
+		}
+	}
+
 	// Initialization and operation ====================================================================================
 
 	init(): void {
@@ -138,14 +184,29 @@ export class CommandCenter extends HiveCluster {
 	}
 
 	run(): void {
-
+		this.runObserver();
 	}
 
-	visuals() {
-		let info = [
-			`Energy: ${Math.floor(this.storage.store[RESOURCE_ENERGY] / 1000)} K`,
-		];
-		Visualizer.showInfo(info, this);
+	visuals(coord: Coord): Coord {
+		let {x, y} = coord;
+		let height = this.storage && this.terminal ? 2 : 1;
+		let titleCoords = Visualizer.section(`${this.colony.name} Command Center`,
+											 {x, y, roomName: this.room.name}, 9.5, height + .1);
+		let boxX = titleCoords.x;
+		y = titleCoords.y + 0.25;
+		if (this.storage) {
+			Visualizer.text('Storage', {x: boxX, y: y, roomName: this.room.name});
+			Visualizer.barGraph(_.sum(this.storage.store) / this.storage.storeCapacity,
+								{x: boxX + 4, y: y, roomName: this.room.name}, 5);
+			y += 1;
+		}
+		if (this.terminal) {
+			Visualizer.text('Terminal', {x: boxX, y: y, roomName: this.room.name});
+			Visualizer.barGraph(_.sum(this.terminal.store) / this.terminal.storeCapacity,
+								{x: boxX + 4, y: y, roomName: this.room.name}, 5);
+			y += 1;
+		}
+		return {x: x, y: y + .25};
 	}
 }
 

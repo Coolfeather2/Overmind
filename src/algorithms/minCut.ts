@@ -199,9 +199,11 @@ export function get2DArray(roomName: string, bounds: Rectangle = {x1: 0, y1: 0, 
 	let x: number;
 	let y: number;
 
+	const terrain = Game.map.getRoomTerrain(roomName);
+
 	for (x = bounds.x1; x <= bounds.x2; x++) {
 		for (y = bounds.y1; y <= bounds.y2; y++) {
-			if (Game.map.getTerrainAt(x, y, roomName) === 'wall') {
+			if (terrain.get(x, y) === TERRAIN_MASK_WALL) {
 				room2D[x][y] = UNWALKABLE; // Mark unwalkable
 			} else if (x === bounds.x1 || y === bounds.y1 || x === bounds.x2 || y === bounds.y2) {
 				room2D[x][y] = EXIT; // Mark exit tiles
@@ -391,7 +393,7 @@ export function getCutTiles(roomName: string, toProtect: Rectangle[],
 							preferCloserBarriers     = true,
 							preferCloserBarrierLimit = Infinity,
 							visualize                = true,
-							bounds: Rectangle        = {x1: 0, y1: 0, x2: 49, y2: 49}) {
+							bounds: Rectangle        = {x1: 0, y1: 0, x2: 49, y2: 49}): Coord[] {
 	const graph = createGraph(roomName, toProtect, preferCloserBarriers, preferCloserBarrierLimit, visualize, bounds);
 	if (!graph) {
 		return [];

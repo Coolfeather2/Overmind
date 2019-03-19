@@ -1,6 +1,11 @@
 import {Directive} from '../Directive';
 import {profile} from '../../profiler/decorator';
+import {Visualizer} from '../../visuals/Visualizer';
+import {bunkerLayout} from '../../roomPlanner/layouts/bunker';
 
+/**
+ * Manually place a bunker anchored at the target location for the RoomPlanner to use in semiautomatic or manual mode
+ */
 @profile
 export class DirectiveRPBunker extends Directive {
 
@@ -12,12 +17,20 @@ export class DirectiveRPBunker extends Directive {
 		super(flag);
 	}
 
+	spawnMoarOverlords() {
+
+	}
+
 	init(): void {
 		this.colony.roomPlanner.addComponent('bunker', this.pos, this.memory.rotation);
 	}
 
 	run(): void {
 
+	}
+
+	visuals(): void {
+		Visualizer.drawLayout(bunkerLayout, this.pos);
 	}
 }
 

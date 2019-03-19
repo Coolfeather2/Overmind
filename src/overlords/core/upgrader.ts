@@ -1,28 +1,19 @@
 import {Overlord} from '../Overlord';
 import {UpgradeSite} from '../../hiveClusters/upgradeSite';
-import {Zerg} from '../../Zerg';
+import {Zerg} from '../../zerg/Zerg';
 import {Tasks} from '../../tasks/Tasks';
 import {OverlordPriority} from '../../priorities/priorities_overlords';
 import {profile} from '../../profiler/decorator';
-import {Pathing} from '../../movement/Pathing';
-import {CreepSetup} from '../CreepSetup';
 import {boostResources} from '../../resources/map_resources';
-import {minBy} from '../../utilities/utils';
+import {Roles, Setups} from '../../creepSetups/setups';
 
-class UpgraderSetup extends CreepSetup {
-	static role = 'upgrader';
-
-	constructor(sizeLimit: number) {
-		super(UpgraderSetup.role, {
-			pattern  : [WORK, WORK, WORK, CARRY, MOVE],
-			sizeLimit: sizeLimit,
-		});
-	}
-}
-
+/**
+ * Spawns an upgrader to upgrade the room controller
+ */
 @profile
 export class UpgradingOverlord extends Overlord {
 
+	upgradersNeeded: number;
 	upgraders: Zerg[];
 	upgradeSite: UpgradeSite;
 	settings: { [property: string]: number };
@@ -30,22 +21,27 @@ export class UpgradingOverlord extends Overlord {
 
 	constructor(upgradeSite: UpgradeSite, priority = OverlordPriority.upgrading.upgrade) {
 		super(upgradeSite, 'upgrade', priority);
-		this.upgraders = this.creeps(UpgraderSetup.role);
 		this.upgradeSite = upgradeSite;
-		if ((this.colony.assets[boostResources.upgrade[3]] || 0) > 3000) {
-			this.boosts[UpgraderSetup.role] = [boostResources.upgrade[3]];
-		}
+		this.upgraders = this.zerg(Roles.upgrader, {
+			boostWishlist: [boostResources.upgrade[3]]
+		});
 	}
 
 	init() {
-		let upgradePower = _.sum(_.map(this.lifetimeFilter(this.upgraders), creep => creep.getActiveBodyparts(WORK)));
-		if (upgradePower < this.upgradeSite.upgradePowerNeeded) {
-			let workPartsPerUpgraderUnit = 3; // TODO: Hard-coded
-			let upgraderSize = Math.ceil(this.upgradeSite.upgradePowerNeeded / workPartsPerUpgraderUnit);
-			this.requestCreep(new UpgraderSetup(upgraderSize));
+		if (this.colony.level < 3) { // can't spawn upgraders at early levels
+			return;
 		}
-		this.creepReport(UpgraderSetup.role, upgradePower, this.upgradeSite.upgradePowerNeeded);
-		this.requestBoosts();
+		if (this.colony.assets[RESOURCE_ENERGY] > UpgradeSite.settings.storageBuffer
+			|| this.upgradeSite.controller.ticksToDowngrade < 500) {
+			const setup = this.colony.level == 8 ? Setups.upgraders.rcl8 : Setups.upgraders.default;
+			if (this.colony.level == 8) {
+				this.wishlist(1, setup);
+			} else {
+				const upgradePowerEach = setup.getBodyPotential(WORK, this.colony);
+				const upgradersNeeded = Math.ceil(this.upgradeSite.upgradePowerNeeded / upgradePowerEach);
+				this.wishlist(upgradersNeeded, setup);
+			}
+		}
 	}
 
 	private handleUpgrader(upgrader: Zerg): void {
@@ -61,8 +57,9 @@ export class UpgradingOverlord extends Overlord {
 				return;
 			}
 			// Build construction site
-			if (this.upgradeSite.inputConstructionSite) {
-				upgrader.task = Tasks.build(this.upgradeSite.inputConstructionSite);
+			const inputSite = this.upgradeSite.findInputConstructionSite();
+			if (inputSite) {
+				upgrader.task = Tasks.build(inputSite);
 				return;
 			}
 			// Sign controller if needed
@@ -80,29 +77,15 @@ export class UpgradingOverlord extends Overlord {
 				upgrader.task = Tasks.withdraw(this.upgradeSite.battery);
 			}
 			// Find somewhere else to recharge from
-			else {
-				let rechargeTargets = _.filter(_.compact([this.colony.storage!,
-														  this.colony.terminal!,
-														  ..._.map(this.colony.miningSites, site => site.output!),
-														  ...this.colony.tombstones]),
-											   s => s.energy > 0);
-				let target = minBy(rechargeTargets, (s: RoomObject) => Pathing.distance(this.upgradeSite.pos, s.pos));
-				if (target) upgrader.task = Tasks.withdraw(target);
+			else { // TODO: BUG HERE IF NO UPGRADE CONTAINER
+				if (this.upgradeSite.battery && this.upgradeSite.battery.targetedBy.length == 0) {
+					upgrader.task = Tasks.recharge();
+				}
 			}
 		}
 	}
 
 	run() {
-		for (let upgrader of this.upgraders) {
-			if (upgrader.isIdle) {
-				if (upgrader.needsBoosts) {
-					this.handleBoosting(upgrader);
-				} else {
-					this.handleUpgrader(upgrader);
-
-				}
-			}
-			upgrader.run();
-		}
+		this.autoRun(this.upgraders, upgrader => this.handleUpgrader(upgrader));
 	}
 }

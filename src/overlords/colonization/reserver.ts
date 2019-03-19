@@ -1,16 +1,16 @@
 import {Overlord} from '../Overlord';
-import {Zerg} from '../../Zerg';
-import {DirectiveOutpost} from '../../directives/core/outpost';
+import {Zerg} from '../../zerg/Zerg';
+import {DirectiveOutpost} from '../../directives/colony/outpost';
 import {Tasks} from '../../tasks/Tasks';
 import {OverlordPriority} from '../../priorities/priorities_overlords';
 import {profile} from '../../profiler/decorator';
-import {CreepSetup} from '../CreepSetup';
+import {Roles, Setups} from '../../creepSetups/setups';
+import {RoomIntel} from '../../intel/RoomIntel';
+import {MY_USERNAME} from '../../~settings';
 
-const ReserverSetup = new CreepSetup('reserver', {
-	pattern  : [CLAIM, MOVE],
-	sizeLimit: 4,
-});
-
+/**
+ * Spawns reservers to reserve an outpost room
+ */
 @profile
 export class ReservingOverlord extends Overlord {
 
@@ -21,16 +21,21 @@ export class ReservingOverlord extends Overlord {
 		super(directive, 'reserve', priority);
 		// Change priority to operate per-outpost
 		this.priority += this.outpostIndex * OverlordPriority.remoteRoom.roomIncrement;
-		this.reservers = this.creeps(ReserverSetup.role);
-		this.reserveBuffer = 3000;
+		this.reserveBuffer = 2000;
+		this.reservers = this.zerg(Roles.claim);
 	}
 
 	init() {
-		if (!this.room || this.room.controller!.needsReserving(this.reserveBuffer)) {
-			this.wishlist(1, ReserverSetup);
-		} else {
-			this.wishlist(0, ReserverSetup);
+		let amount = 0;
+		if (this.room) {
+			if (this.room.controller!.needsReserving(this.reserveBuffer)) {
+				amount = 1;
+			}
+		} else if (RoomIntel.roomReservedBy(this.pos.roomName) == MY_USERNAME &&
+				   RoomIntel.roomReservationRemaining(this.pos.roomName) < 1000) {
+			amount = 1;
 		}
+		this.wishlist(amount, Setups.infestors.reserve);
 	}
 
 	private handleReserver(reserver: Zerg): void {
@@ -53,11 +58,6 @@ export class ReservingOverlord extends Overlord {
 	}
 
 	run() {
-		for (let reserver of this.reservers) {
-			if (reserver.isIdle) {
-				this.handleReserver(reserver);
-			}
-			reserver.run();
-		}
+		this.autoRun(this.reservers, reserver => this.handleReserver(reserver));
 	}
 }

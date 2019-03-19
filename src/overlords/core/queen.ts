@@ -1,19 +1,12 @@
-// Hatchery overlord: spawn and run a dedicated supplier-like hatchery attendant (called after colony has storage)
-import {Overlord} from '../Overlord';
+import {DEFAULT_PRESPAWN, Overlord} from '../Overlord';
 import {Hatchery} from '../../hiveClusters/hatchery';
-import {Zerg} from '../../Zerg';
+import {Zerg} from '../../zerg/Zerg';
 import {Tasks} from '../../tasks/Tasks';
-import {log} from '../../console/log';
 import {OverlordPriority} from '../../priorities/priorities_overlords';
 import {profile} from '../../profiler/decorator';
-import {CreepSetup} from '../CreepSetup';
-import {maxBy, minMax} from '../../utilities/utils';
-import {isResource} from '../../declarations/typeGuards';
-
-export const QueenSetup = new CreepSetup('queen', {
-	pattern  : [CARRY, CARRY, MOVE],
-	sizeLimit: 8,
-});
+import {Roles, Setups} from '../../creepSetups/setups';
+import {CreepSetup} from '../../creepSetups/CreepSetup';
+import {TerminalState_Rebuild} from '../../directives/terminalState/terminalState_rebuild';
 
 type rechargeObjectType = StructureStorage
 	| StructureTerminal
@@ -22,33 +15,34 @@ type rechargeObjectType = StructureStorage
 	| Tombstone
 	| Resource;
 
+/**
+ * Spawns a dedicated hatchery attendant to refill spawns and extensions
+ */
 @profile
-export class HatcheryOverlord extends Overlord {
+export class QueenOverlord extends Overlord {
 
 	hatchery: Hatchery;
+	queenSetup: CreepSetup;
 	queens: Zerg[];
 	settings: any;
 
-	// private _prioritizedRefills: { [priority: number]: TransportRequest[] };
-
-	constructor(hatchery: Hatchery, priority = OverlordPriority.spawning.hatchery) {
-		super(hatchery, 'hatchery', priority);
+	constructor(hatchery: Hatchery, priority = OverlordPriority.core.queen) {
+		super(hatchery, 'supply', priority);
 		this.hatchery = hatchery;
-		this.queens = this.creeps(QueenSetup.role);
+		this.queenSetup = this.colony.storage ? Setups.queens.default : Setups.queens.early;
+		if (this.colony.terminalState == TerminalState_Rebuild) {
+			this.queenSetup = Setups.queens.early;
+		}
+		this.queens = this.zerg(Roles.queen);
 		this.settings = {
 			refillTowersBelow: 500,
 		};
 	}
 
 	init() {
-		let amount = 1;
-		// if (this.colony.level > 1) {
-		//	amount = 2;
-		// }
-		// if (this.colony.defcon > DEFCON.invasionNPC) {
-		// 	amount = 2;
-		// }
-		this.wishlist(amount, QueenSetup);
+		const amount = 1;
+		const prespawn = this.hatchery.spawns.length <= 1 ? 100 : DEFAULT_PRESPAWN;
+		this.wishlist(amount, this.queenSetup, {prespawn: prespawn});
 	}
 
 	private supplyActions(queen: Zerg) {
@@ -64,36 +58,10 @@ export class HatcheryOverlord extends Overlord {
 	private rechargeActions(queen: Zerg): void {
 		if (this.hatchery.link && !this.hatchery.link.isEmpty) {
 			queen.task = Tasks.withdraw(this.hatchery.link);
-		} else if (this.hatchery.battery && !this.hatchery.battery.isEmpty) {
+		} else if (this.hatchery.battery && this.hatchery.battery.energy > 0) {
 			queen.task = Tasks.withdraw(this.hatchery.battery);
 		} else {
-			let rechargeObjects = _.compact([this.colony.storage!,
-											 this.colony.terminal!,
-											 this.colony.upgradeSite.link!,
-											 this.colony.upgradeSite.battery!,
-											 ...(this.colony.room.drops[RESOURCE_ENERGY] || []),
-											 ..._.map(this.colony.miningSites, site => site.output!),
-											 ...this.colony.tombstones]) as rechargeObjectType[];
-			rechargeObjects = _.filter(rechargeObjects, obj => isResource(obj) ? obj.amount > 0 : obj.energy > 0);
-			let target = maxBy(rechargeObjects, function (obj) {
-				let amount: number;
-				if (isResource(obj)) {
-					amount = obj.amount;
-				} else {
-					amount = obj.energy;
-				}
-				amount = minMax(amount, 0, queen.carryCapacity);
-				return amount / (queen.pos.getMultiRoomRangeTo(obj.pos) + 1);
-			});
-			if (target) {
-				if (target instanceof Resource) {
-					queen.task = Tasks.pickup(target);
-				} else {
-					queen.task = Tasks.withdraw(target);
-				}
-			} else {
-				log.warning(`No valid withdraw target for queen at ${queen.pos.print}!`);
-			}
+			queen.task = Tasks.recharge();
 		}
 	}
 
@@ -162,12 +130,5 @@ export class HatcheryOverlord extends Overlord {
 				}
 			}
 		}
-		// Delete extraneous queens in the case there are multiple
-		// if (this.queens.length > 1) {
-		// 	let queenToSuicide = _.first(_.sortBy(this.queens, queen => queen.ticksToLive));
-		// 	if (queenToSuicide) {
-		// 		queenToSuicide.suicide();
-		// 	}
-		// }
 	}
 }

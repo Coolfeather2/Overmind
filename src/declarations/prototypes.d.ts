@@ -1,7 +1,10 @@
 interface Creep {
+	hitsPredicted?: number;
+	intel?: { [property: string]: number };
 	memory: CreepMemory;
 	boosts: _ResourceConstantSansEnergy[];
 	boostCounts: { [boostType: string]: number };
+	inRampart: boolean;
 }
 
 interface ConstructionSite {
@@ -9,7 +12,7 @@ interface ConstructionSite {
 }
 
 interface Flag {
-	// recalculateColony(restrictDistance?: number): void;
+
 }
 
 type Sink = StructureSpawn |
@@ -18,25 +21,38 @@ type Sink = StructureSpawn |
 	StructurePowerSpawn |
 	StructureNuker |
 	StructureTower;
+
 type StorageUnit = StructureContainer | StructureTerminal | StructureStorage;
+
+type rechargeObjectType = StructureStorage
+	| StructureTerminal
+	| StructureContainer
+	| StructureLink
+	| Tombstone
+	| Resource;
 
 interface Room {
 	print: string;
 	my: boolean;
+	isOutpost: boolean;
+	owner: string | undefined;
 	reservedByMe: boolean;
 	signedByMe: boolean;
 	creeps: Creep[];
+	sourceKeepers: Creep[];
 	hostiles: Creep[];
 	dangerousHostiles: Creep[];
 	playerHostiles: Creep[];
+	invaders: Creep[];
 	dangerousPlayerHostiles: Creep[];
+	fleeDefaults: HasPos[];
 	hostileStructures: Structure[];
+	structures: Structure[];
 	flags: Flag[];
 	// Cached structures
 	tombstones: Tombstone[];
 	drops: { [resourceType: string]: Resource[] };
 	droppedEnergy: Resource[];
-	// droppedMinerals: Resource[];
 	droppedPower: Resource[];
 	// Room structures
 	_refreshStructureCache
@@ -47,7 +63,9 @@ interface Room {
 	walls: StructureWall[];
 	constructedWalls: StructureWall[];
 	ramparts: StructureRampart[];
+	walkableRamparts: StructureRampart[];
 	barriers: (StructureWall | StructureRampart)[];
+	storageUnits: StorageUnit[];
 	keeperLairs: StructureKeeperLair[];
 	portals: StructurePortal[];
 	links: StructureLink[];
@@ -61,23 +79,22 @@ interface Room {
 	extractor: StructureExtractor | undefined;
 	nuker: StructureNuker | undefined;
 	repairables: Structure[];
-
+	rechargeables: rechargeObjectType[];
 	sources: Source[];
 	mineral: Mineral | undefined;
 	constructionSites: ConstructionSite[];
 	// Used by movement library
-	_defaultMatrix: CostMatrix;
+	// _defaultMatrix: CostMatrix;
+	// _directMatrix: CostMatrix;
 	_creepMatrix: CostMatrix;
-	_skMatrix: CostMatrix;
+	// _priorityMatrices: { [priority: number]: CostMatrix };
+	// _skMatrix: CostMatrix;
+	_kitingMatrix: CostMatrix;
 }
 
 interface RoomObject {
 	ref: string;
 	targetedBy: string[];
-	linked: boolean;
-	nearbyLinks: StructureLink[];
-
-	// isTargetFor(taskName?: string): ITask[];
 
 	serialize(): protoRoomObject;
 }
@@ -93,11 +110,20 @@ interface RoomPosition {
 	rangeToEdge: number;
 	roomCoords: Coord;
 	neighbors: RoomPosition[];
-	// adjacentSpots: RoomPosition[];
-	// availableAdjacentSpots: RoomPosition[];
+
+	inRangeToPos(pos: RoomPosition, range: number): boolean;
+
+	inRangeToXY(x: number, y: number, range: number): boolean;
+
+	getRangeToXY(x: number, y: number): number
+
 	getPositionsAtRange(range: number, includeWalls?: boolean, includeEdges?: boolean): RoomPosition[];
 
 	getPositionsInRange(range: number, includeWalls?: boolean, includeEdges?: boolean): RoomPosition[];
+
+	getOffsetPos(dx: number, dy: number): RoomPosition;
+
+	lookFor<T extends keyof AllLookAtTypes>(structureType: T): Array<AllLookAtTypes[T]>;
 
 	lookForStructure(structureType: StructureConstant): Structure | undefined;
 
@@ -110,14 +136,16 @@ interface RoomPosition {
 	getMultiRoomRangeTo(pos: RoomPosition): number;
 
 	findClosestByLimitedRange<T>(objects: T[] | RoomPosition[], rangeLimit: number,
-								 opts?: { filter: any | string; }): T;
+								 opts?: { filter: any | string; }): T | undefined;
 
-	findClosestByMultiRoomRange<T extends _HasRoomPosition>(objects: T[]): T;
+	findClosestByMultiRoomRange<T extends _HasRoomPosition>(objects: T[]): T | undefined;
 
-	findClosestByRangeThenPath<T extends _HasRoomPosition>(objects: T[]): T;
+	findClosestByRangeThenPath<T extends _HasRoomPosition>(objects: T[]): T | undefined;
 }
 
 interface RoomVisual {
+	box(x: number, y: number, w: number, h: number, style?: LineStyle): RoomVisual;
+
 	infoBox(info: string[], x: number, y: number, opts?: { [option: string]: any }): RoomVisual;
 
 	multitext(textLines: string[], x: number, y: number, opts?: { [option: string]: any }): RoomVisual;
@@ -129,6 +157,14 @@ interface RoomVisual {
 	speech(text: string, x: number, y: number, opts?: { [option: string]: any }): RoomVisual;
 
 	animatedPosition(x: number, y: number, opts?: { [option: string]: any }): RoomVisual;
+
+	resource(type: ResourceConstant, x: number, y: number, size?: number, opacity?: number): number;
+
+	_fluid(type: string, x: number, y: number, size?: number, opacity?: number): void;
+
+	_mineral(type: string, x: number, y: number, size?: number, opacity?: number): void;
+
+	_compound(type: string, x: number, y: number, size?: number, opacity?: number): void;
 
 	test(): RoomVisual;
 }
@@ -177,7 +213,6 @@ interface StructureSpawn {
 	isEmpty: boolean;
 
 	cost(bodyArray: string[]): number;
-
 }
 
 interface StructureTerminal {

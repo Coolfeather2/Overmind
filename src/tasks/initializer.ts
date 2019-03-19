@@ -23,12 +23,16 @@ import {TaskTransfer, transferTargetType, transferTaskName} from './instances/tr
 import {TaskUpgrade, upgradeTargetType, upgradeTaskName} from './instances/upgrade';
 import {dropTargetType, dropTaskName, TaskDrop} from './instances/drop';
 import {TaskInvalid} from './instances/invalid';
-import {fleeTargetType, fleeTaskName, TaskFlee} from './instances/flee';
+// import {fleeTargetType, fleeTaskName, TaskFlee} from './instances/flee';
 import {TaskTransferAll, transferAllTargetType, transferAllTaskName} from './instances/transferAll';
 import {log} from '../console/log';
 import {TaskWithdrawAll, withdrawAllTargetType, withdrawAllTaskName} from './instances/withdrawAll';
-import profiler from 'screeps-profiler';
+import profiler from '../profiler/screeps-profiler';
+import {rechargeTaskName, TaskRecharge} from './instances/recharge';
 
+/**
+ * The task initializer maps serialized prototasks to Task instances
+ */
 export function initializeTask(protoTask: protoTask): Task {
 	// Retrieve name and target data from the protoTask
 	let taskName = protoTask.name;
@@ -54,9 +58,9 @@ export function initializeTask(protoTask: protoTask): Task {
 		case dropTaskName:
 			task = new TaskDrop(derefRoomPosition(protoTask._target._pos) as dropTargetType);
 			break;
-		case fleeTaskName:
-			task = new TaskFlee(derefRoomPosition(protoTask._target._pos) as fleeTargetType);
-			break;
+		// case fleeTaskName:
+		// 	task = new TaskFlee(derefRoomPosition(protoTask._target._pos) as fleeTargetType);
+		// 	break;
 		case fortifyTaskName:
 			task = new TaskFortify(target as fortifyTargetType);
 			break;
@@ -69,7 +73,7 @@ export function initializeTask(protoTask: protoTask): Task {
 			break;
 		case goToTaskName:
 			// task = new TaskGoTo(derefRoomPosition(protoTask._target._pos) as goToTargetType);
-			task = new TaskInvalid(target as any);
+			task = new TaskInvalid();
 			break;
 		case goToRoomTaskName:
 			task = new TaskGoToRoom(protoTask._target._pos.roomName as goToRoomTargetType);
@@ -88,6 +92,9 @@ export function initializeTask(protoTask: protoTask): Task {
 			break;
 		case rangedAttackTaskName:
 			task = new TaskRangedAttack(target as rangedAttackTargetType);
+			break;
+		case rechargeTaskName:
+			task = new TaskRecharge(null);
 			break;
 		case repairTaskName:
 			task = new TaskRepair(target as repairTargetType);
@@ -115,7 +122,7 @@ export function initializeTask(protoTask: protoTask): Task {
 			break;
 		default:
 			log.error(`Invalid task name: ${taskName}! task.creep: ${protoTask._creep.name}. Deleting from memory!`);
-			task = new TaskInvalid(target as any);
+			task = new TaskInvalid();
 			break;
 	}
 	// Modify the task object to reflect any changed properties
@@ -124,5 +131,5 @@ export function initializeTask(protoTask: protoTask): Task {
 	return task;
 }
 
-profiler.registerFN(initializeTask);
+profiler.registerFN(initializeTask, 'initializeTask');
 

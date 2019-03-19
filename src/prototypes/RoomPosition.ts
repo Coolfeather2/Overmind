@@ -1,59 +1,89 @@
-import {minBy} from '../utilities/utils';
+import {minBy, mod} from '../utilities/utils';
+import {Cartographer} from '../utilities/Cartographer';
 
 Object.defineProperty(RoomPosition.prototype, 'print', {
 	get() {
 		return '<a href="#!/room/' + Game.shard.name + '/' + this.roomName + '">[' + this.roomName + ', ' + this.x + ', ' + this.y + ']</a>';
-	}
+	},
+	configurable: true,
 });
 
 Object.defineProperty(RoomPosition.prototype, 'printPlain', {
 	get() {
 		return `[${this.roomName}, ${this.x}, ${this.y}]`;
-	}
+	},
+	configurable: true,
 });
 
 Object.defineProperty(RoomPosition.prototype, 'room', { // identifier for the pos, used in caching
-	get: function () {
+	get         : function () {
 		return Game.rooms[this.roomName];
 	},
+	configurable: true,
 });
 
 Object.defineProperty(RoomPosition.prototype, 'name', { // identifier for the pos, used in caching
-	get: function () {
+	get         : function () {
 		return this.roomName + ':' + this.x + ':' + this.y;
 	},
+	configurable: true,
 });
 
 Object.defineProperty(RoomPosition.prototype, 'coordName', { // name, but without the roomName
-	get: function () {
+	get         : function () {
 		return this.x + ':' + this.y;
 	},
+	configurable: true,
 });
 
 RoomPosition.prototype.lookForStructure = function (structureType: StructureConstant): Structure | undefined {
-	return _.find(this.lookFor(LOOK_STRUCTURES), s => s.structureType == structureType);
+	return _.find(this.lookFor(LOOK_STRUCTURES), s => s.structureType === structureType);
 };
 
+RoomPosition.prototype.getOffsetPos = function (dx: number, dy: number): RoomPosition {
+	let roomName = this.roomName;
+	let x = this.x + dx;
+	if (x < 0 || x > 49) {
+		let dxRoom = Math.floor(x / 50);
+		x = mod(x, 50);
+		roomName = Cartographer.findRelativeRoomName(roomName, dxRoom, 0);
+	}
+	let y = this.y + dy;
+	if (y < 0 || y > 49) {
+		let dyRoom = Math.floor(y / 50);
+		y = mod(y, 50);
+		roomName = Cartographer.findRelativeRoomName(roomName, 0, dyRoom);
+	}
+	return new RoomPosition(x, y, roomName);
+};
+
+// RoomPosition.prototype.findInRange_fast = function<T extends HasPos>(objects: T[], range: number): T[] {
+// 	return _.filter(objects, o => this.inRangeToXY(o.pos.x, o.pos.y, range));
+// }
+
 Object.defineProperty(RoomPosition.prototype, 'isEdge', { // if the position is at the edge of a room
-	get: function () {
-		return this.x == 0 || this.x == 49 || this.y == 0 || this.y == 49;
+	get         : function () {
+		return this.x === 0 || this.x === 49 || this.y === 0 || this.y === 49;
 	},
+	configurable: true,
 });
 
 Object.defineProperty(RoomPosition.prototype, 'isVisible', { // if the position is in a defined room
-	get: function () {
+	get         : function () {
 		return Game.rooms[this.roomName] != undefined;
 	},
+	configurable: true,
 });
 
 Object.defineProperty(RoomPosition.prototype, 'rangeToEdge', { // range to the nearest room edge
-	get: function () {
+	get         : function () {
 		return _.min([this.x, 49 - this.x, this.y, 49 - this.y]);
 	},
+	configurable: true,
 });
 
 Object.defineProperty(RoomPosition.prototype, 'roomCoords', {
-	get: function () {
+	get         : function () {
 		let parsed = /^[WE]([0-9]+)[NS]([0-9]+)$/.exec(this.roomName);
 		let x = parseInt(parsed![1], 10);
 		let y = parseInt(parsed![2], 10);
@@ -61,10 +91,11 @@ Object.defineProperty(RoomPosition.prototype, 'roomCoords', {
 		if (this.roomName.includes('N')) y = -y;
 		return {x: x, y: y} as Coord;
 	},
+	configurable: true,
 });
 
 Object.defineProperty(RoomPosition.prototype, 'neighbors', {
-	get: function () {
+	get         : function () {
 		let adjPos: RoomPosition[] = [];
 		for (let dx of [-1, 0, 1]) {
 			for (let dy of [-1, 0, 1]) {
@@ -78,11 +109,29 @@ Object.defineProperty(RoomPosition.prototype, 'neighbors', {
 			}
 		}
 		return adjPos;
-	}
+	},
+	configurable: true,
 });
+
+RoomPosition.prototype.inRangeToPos = function (pos: RoomPosition, range: number): boolean {
+	return this.roomName === pos.roomName &&
+		   ((pos.x - this.x) < 0 ? (this.x - pos.x) : (pos.x - this.x)) <= range &&
+		   ((pos.y - this.y) < 0 ? (this.y - pos.y) : (pos.y - this.y)) <= range;
+};
+
+RoomPosition.prototype.inRangeToXY = function (x: number, y: number, range: number) {
+	return ((x - this.x) < 0 ? (this.x - x) : (x - this.x)) <= range
+		   && ((y - this.y) < 0 ? (this.y - y) : (y - this.y)) <= range;
+};
+
+RoomPosition.prototype.getRangeToXY = function (x: number, y: number) {
+	return Math.max((x - this.x) < 0 ? (this.x - x) : (x - this.x), ((y - this.y) < 0 ? (this.y - y) : (y - this.y)));
+};
 
 RoomPosition.prototype.getPositionsInRange = function (range: number,
 													   includeWalls = false, includeEdges = false): RoomPosition[] {
+	const terrain = Game.map.getRoomTerrain(this.roomName);
+
 	let adjPos: RoomPosition[] = [];
 	let [xmin, xmax] = includeEdges ? [0, 49] : [1, 48];
 	let [ymin, ymax] = includeEdges ? [0, 49] : [1, 48];
@@ -91,7 +140,7 @@ RoomPosition.prototype.getPositionsInRange = function (range: number,
 			let x = this.x + dx;
 			let y = this.y + dy;
 			if (xmin <= x && x <= xmax && xmin <= y && y <= xmax) {
-				if (includeWalls || Game.map.getTerrainAt(x, y, this.roomName) != 'wall') {
+				if (includeWalls || terrain.get(x, y) !== TERRAIN_MASK_WALL) {
 					adjPos.push(new RoomPosition(x, y, this.roomName));
 				}
 			}
@@ -102,18 +151,19 @@ RoomPosition.prototype.getPositionsInRange = function (range: number,
 
 RoomPosition.prototype.getPositionsAtRange = function (range: number,
 													   includeWalls = false, includeEdges = false): RoomPosition[] {
+	const terrain = Game.map.getRoomTerrain(this.roomName);
 	let adjPos: RoomPosition[] = [];
 	let [xmin, xmax] = includeEdges ? [0, 49] : [1, 48];
 	let [ymin, ymax] = includeEdges ? [0, 49] : [1, 48];
 	for (let dx = -1 * range; dx <= range; dx++) {
 		for (let dy = -1 * range; dy <= range; dy++) {
-			if (Math.max(dx, dy) < range) {
+			if (Math.max(Math.abs(dx), Math.abs(dy)) < range) {
 				continue;
 			}
 			let x = this.x + dx;
 			let y = this.y + dy;
 			if (xmin <= x && x <= xmax && xmin <= y && y <= xmax) {
-				if (includeWalls || Game.map.getTerrainAt(x, y, this.roomName) != 'wall') {
+				if (includeWalls || terrain.get(x, y) !== TERRAIN_MASK_WALL) {
 					adjPos.push(new RoomPosition(x, y, this.roomName));
 				}
 			}
@@ -122,15 +172,9 @@ RoomPosition.prototype.getPositionsAtRange = function (range: number,
 	return adjPos;
 };
 
-// Object.defineProperty(RoomPosition.prototype, 'adjacentSpots', {
-// 	get: function () {
-// 		return spots;
-// 	}
-// });
-
 RoomPosition.prototype.isWalkable = function (ignoreCreeps = false): boolean {
 	// Is terrain passable?
-	if (Game.map.getTerrainAt(this) == 'wall') return false;
+	if (Game.map.getRoomTerrain(this.roomName).get(this.x, this.y) == TERRAIN_MASK_WALL) return false;
 	if (this.isVisible) {
 		// Are there creeps?
 		if (ignoreCreeps == false && this.lookFor(LOOK_CREEPS).length > 0) return false;
@@ -145,39 +189,39 @@ RoomPosition.prototype.availableNeighbors = function (ignoreCreeps = false): Roo
 };
 
 RoomPosition.prototype.getPositionAtDirection = function (direction: DirectionConstant, range = 1): RoomPosition {
-	let x = this.x;
-	let y = this.y;
+	let dx = 0;
+	let dy = 0;
 	switch (direction) {
 		case 1:
-			y -= range;
+			dy = -range;
 			break;
 		case 2:
-			y -= range;
-			x += range;
+			dy = -range;
+			dx = range;
 			break;
 		case 3:
-			x += range;
+			dx = range;
 			break;
 		case 4:
-			x += range;
-			y += range;
+			dx = range;
+			dy = range;
 			break;
 		case 5:
-			y += range;
+			dy = range;
 			break;
 		case 6:
-			y += range;
-			x -= range;
+			dy = range;
+			dx = -range;
 			break;
 		case 7:
-			x -= range;
+			dx = -range;
 			break;
 		case 8:
-			x -= range;
-			y -= range;
+			dx = -range;
+			dy = -range;
 			break;
 	}
-	return new RoomPosition(x, y, this.roomName);
+	return this.getOffsetPos(dx, dy);
 };
 
 
@@ -213,12 +257,12 @@ RoomPosition.prototype.getMultiRoomRangeTo = function (pos: RoomPosition): numbe
 };
 
 RoomPosition.prototype.findClosestByLimitedRange = function <T>(objects: T[] | RoomPosition[], rangeLimit: number,
-																opts?: { filter: any | string; }): T {
+																opts?: { filter: any | string; }): T | undefined {
 	let objectsInRange = this.findInRange(objects, rangeLimit, opts);
 	return this.findClosestByRange(objectsInRange, opts);
 };
 
-RoomPosition.prototype.findClosestByMultiRoomRange = function <T extends _HasRoomPosition>(objects: T[]): T {
+RoomPosition.prototype.findClosestByMultiRoomRange = function <T extends _HasRoomPosition>(objects: T[]): T | undefined {
 	return minBy(objects, (obj: T) => this.getMultiRoomRangeTo(obj.pos));
 };
 

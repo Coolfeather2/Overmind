@@ -1,11 +1,13 @@
-// Prioritized list of what order structures should be built in
+/**
+ * Prioritized list of what order structures should be built in
+ */
 export const BuildPriorities: BuildableStructureConstant[] = [
 	STRUCTURE_SPAWN,
-	STRUCTURE_CONTAINER,
 	STRUCTURE_TOWER,
 	STRUCTURE_EXTENSION,
 	STRUCTURE_STORAGE,
 	STRUCTURE_TERMINAL,
+	STRUCTURE_CONTAINER,
 	STRUCTURE_LINK,
 	STRUCTURE_EXTRACTOR,
 	STRUCTURE_LAB,
@@ -17,7 +19,21 @@ export const BuildPriorities: BuildableStructureConstant[] = [
 	STRUCTURE_ROAD,
 ];
 
-// Prioritized list of what order enemy structures should be attacked in
+/**
+ * Prioritized list of what order structures should be fortified in case of nuclear strike
+ */
+export const FortifyPriorities: BuildableStructureConstant[] = [
+	STRUCTURE_TERMINAL,
+	STRUCTURE_STORAGE,
+	STRUCTURE_SPAWN,
+	STRUCTURE_TOWER,
+	STRUCTURE_LAB,
+	STRUCTURE_NUKER,
+];
+
+/**
+ * Prioritized list of what order enemy structures should be attacked in
+ */
 export const AttackStructurePriorities: BuildableStructureConstant[] = [
 	STRUCTURE_SPAWN,
 	STRUCTURE_TOWER,
@@ -36,11 +52,16 @@ export const AttackStructurePriorities: BuildableStructureConstant[] = [
 	STRUCTURE_WALL,
 ];
 
-// Prioritized list of what order owned structures should be demolished (and then moved) in
+export const AttackStructureScores = _.zipObject(_.map(AttackStructurePriorities, type =>
+	[type, AttackStructurePriorities.length - _.indexOf(AttackStructurePriorities, type)])) as { [t: string]: number };
+
+/**
+ * Prioritized list of what order owned structures should be demolished (and then moved) in
+ */
 export const DemolishStructurePriorities: {
 	structureType: BuildableStructureConstant,
 	maxRemoved?: number,
-	dismantle?: boolean
+	// dismantle?: boolean
 }[] = [
 	{structureType: STRUCTURE_EXTENSION, maxRemoved: 15},
 	{structureType: STRUCTURE_SPAWN, maxRemoved: 1},
@@ -54,10 +75,10 @@ export const DemolishStructurePriorities: {
 	{structureType: STRUCTURE_POWER_SPAWN},
 	// {structureType: STRUCTURE_ROAD}, // just let roads decay
 	{structureType: STRUCTURE_CONTAINER},
-	{structureType: STRUCTURE_STORAGE},
-	{structureType: STRUCTURE_TERMINAL},
-	{structureType: STRUCTURE_WALL, dismantle: true},
-	{structureType: STRUCTURE_RAMPART, dismantle: true},
+	{structureType: STRUCTURE_STORAGE, maxRemoved: 1},
+	{structureType: STRUCTURE_TERMINAL, maxRemoved: 1},
+	{structureType: STRUCTURE_WALL},
+	{structureType: STRUCTURE_RAMPART},
 ];
 
 

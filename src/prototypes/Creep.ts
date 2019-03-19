@@ -11,7 +11,8 @@ Object.defineProperty(Creep.prototype, 'boosts', {
 		return this._boosts;
 		// return _.compact(_.unique(_.map(this.body as BodyPartDefinition[],
 		// 								bodyPart => bodyPart.boost))) as _ResourceConstantSansEnergy[];
-	}
+	},
+	configurable: true,
 });
 
 Object.defineProperty(Creep.prototype, 'boostCounts', {
@@ -20,6 +21,13 @@ Object.defineProperty(Creep.prototype, 'boostCounts', {
 			this._boostCounts = _.countBy(this.body as BodyPartDefinition[], bodyPart => bodyPart.boost);
 		}
 		return this._boostCounts;
-	}
+	},
+	configurable: true,
 });
 
+Object.defineProperty(Creep.prototype, 'inRampart', {
+	get() {
+		return !!this.pos.lookForStructure(STRUCTURE_RAMPART); // this assumes hostile creeps can't stand in my ramparts
+	},
+	configurable: true,
+});

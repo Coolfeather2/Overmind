@@ -1,8 +1,10 @@
-// A grouping for objectives that allows colony components to have their own objectives instead of all being on Overlord
-
 import {profile} from '../profiler/decorator';
 import {Colony} from '../Colony';
 
+/**
+ * The link network controls the flow of energy through various links in a room and uses a greedy matching algorithm
+ * to determine where to send energy to
+ */
 @profile
 export class LinkNetwork {
 
@@ -23,8 +25,15 @@ export class LinkNetwork {
 		};
 	}
 
+	refresh(): void {
+		this.receive = [];
+		this.transmit = [];
+	}
+
 	claimLink(link: StructureLink | undefined): void {
-		_.remove(this.colony.availableLinks, l => l == link);
+		if (link) {
+			_.remove(this.colony.availableLinks, l => l.id == link.id);
+		}
 	}
 
 	requestReceive(link: StructureLink): void {
@@ -35,7 +44,9 @@ export class LinkNetwork {
 		this.transmit.push(link);
 	}
 
-	/* Number of ticks until a dropoff link is available again to deposit energy to */
+	/**
+	 * Number of ticks until a dropoff link is available again to deposit energy to
+	 */
 	getDropoffAvailability(link: StructureLink): number {
 		let dest = this.colony.commandCenter ? this.colony.commandCenter.pos : this.colony.pos;
 		let usualCooldown = link.pos.getRangeTo(dest);
@@ -47,15 +58,17 @@ export class LinkNetwork {
 	}
 
 	init(): void {
-		for (let link of this.colony.dropoffLinks) {
-			if (link.energy > this.settings.linksTrasmitAt) {
-				this.requestTransmit(link);
-			}
-		}
+		// for (let link of this.colony.dropoffLinks) {
+		// 	if (link.energy > this.settings.linksTrasmitAt) {
+		// 		this.requestTransmit(link);
+		// 	}
+		// }
 	}
 
-	/* Examine the link resource requests and try to efficiently (but greedily) match links that need energy in and
-	 * out, then send the remaining resourceOut link requests to the command center link */
+	/**
+	 * Examine the link resource requests and try to efficiently (but greedily) match links that need energy in and
+	 * out, then send the remaining resourceOut link requests to the command center link
+	 */
 	run(): void {
 		// For each receiving link, greedily get energy from the closest transmitting link - at most 9 operations
 		for (let receiveLink of this.receive) {

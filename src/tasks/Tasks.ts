@@ -1,9 +1,10 @@
+import {Task} from './Task';
 import {attackTargetType, TaskAttack} from './instances/attack';
 //import { attackControllerTargetType, TaskAttackController } from './instances/attackController';
 import {buildTargetType, TaskBuild} from './instances/build';
 import {claimTargetType, TaskClaim} from './instances/claim';
 import {dismantleTargetType, TaskDismantle} from './instances/dismantle';
-import {fleeTargetType, TaskFlee} from './instances/flee';
+// import {fleeTargetType, TaskFlee} from './instances/flee';
 import {fortifyTargetType, TaskFortify} from './instances/fortify';
 import {getBoostedTargetType, TaskGetBoosted} from './instances/getBoosted';
 import {getRenewedTargetType, TaskGetRenewed} from './instances/getRenewed';
@@ -23,9 +24,32 @@ import {TaskWithdraw, withdrawTargetType} from './instances/withdraw';
 import {dropTargetType, TaskDrop} from './instances/drop';
 import {profile} from '../profiler/decorator';
 import {TaskWithdrawAll, withdrawAllTargetType} from './instances/withdrawAll';
+import {TaskRecharge} from './instances/recharge';
 
+/**
+ * Tasks class provides conveient wrappers for dispensing new Task instances
+ */
 @profile
 export class Tasks {
+
+	static chain(tasks: Task[], setNextPos = true): Task | null {
+		if (tasks.length == 0) {
+			// log.error(`Tasks.chain was passed an empty array of tasks!`);
+			return null;
+		}
+		if (setNextPos) {
+			for (let i = 0; i < tasks.length - 1; i++) {
+				tasks[i].options.nextPos = tasks[i + 1].targetPos;
+			}
+		}
+		// Make the accumulator task from the end and iteratively fork it
+		let task = _.last(tasks); // start with last task
+		tasks = _.dropRight(tasks); // remove it from the list
+		for (let i = (tasks.length - 1); i >= 0; i--) { // iterate over the remaining tasks
+			task = task.fork(tasks[i]);
+		}
+		return task;
+	}
 
 	static attack(target: attackTargetType, options = {} as TaskOptions): TaskAttack {
 		return new TaskAttack(target, options);
@@ -54,9 +78,9 @@ export class Tasks {
 		return new TaskDrop(target, resourceType, amount, options);
 	}
 
-	static flee(target: fleeTargetType, options = {} as TaskOptions) {
-		return new TaskFlee(target, options);
-	}
+	// static flee(target: fleeTargetType, options = {} as TaskOptions) {
+	// 	return new TaskFlee(target, options);
+	// }
 
 	static fortify(target: fortifyTargetType, options = {} as TaskOptions): TaskFortify {
 		return new TaskFortify(target, options);
@@ -97,6 +121,10 @@ export class Tasks {
 		return new TaskRangedAttack(target, options);
 	}
 
+	static recharge(minEnergy = 0, options = {} as TaskOptions): TaskRecharge {
+		return new TaskRecharge(null, minEnergy, options);
+	}
+
 	static repair(target: repairTargetType, options = {} as TaskOptions): TaskRepair {
 		return new TaskRepair(target, options);
 	}
@@ -117,8 +145,10 @@ export class Tasks {
 		return new TaskTransfer(target, resourceType, amount, options);
 	}
 
-	static transferAll(target: transferAllTargetType, options = {} as TaskOptions): TaskTransferAll {
-		return new TaskTransferAll(target, options);
+	static transferAll(target: transferAllTargetType,
+					   skipEnergy = false,
+					   options    = {} as TaskOptions): TaskTransferAll {
+		return new TaskTransferAll(target, skipEnergy, options);
 	}
 
 	static upgrade(target: upgradeTargetType, options = {} as TaskOptions): TaskUpgrade {

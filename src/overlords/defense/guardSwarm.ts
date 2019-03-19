@@ -1,34 +1,24 @@
-// Guard swarm overlord: spawns lots of smaller guards to deal with swarm-like attacks or harassments
-
-import {Zerg} from '../../Zerg';
+import {Zerg} from '../../zerg/Zerg';
 import {OverlordPriority} from '../../priorities/priorities_overlords';
-import {DirectiveGuardSwarm} from '../../directives/defense/guardSwarm';
-import {CreepSetup} from '../CreepSetup';
-import {CombatOverlord} from '../CombatOverlord';
 import {profile} from '../../profiler/decorator';
 import {DirectiveGuard} from '../../directives/defense/guard';
+import {Overlord} from '../Overlord';
+import {CombatZerg} from '../../zerg/CombatZerg';
+import {CombatSetups, Roles} from '../../creepSetups/setups';
 
-export class EarlyGuardSetup extends CreepSetup {
-	static role = 'smolGuard';
-
-	constructor() {
-		super(EarlyGuardSetup.role, {
-			pattern  : [MOVE, ATTACK],
-			sizeLimit: 2,
-		});
-	}
-}
-
+/**
+ * Guard swarm overlord: spawns lots of smaller guards to deal with swarm-like attacks or harassments
+ */
 @profile
-export class GuardSwarmOverlord extends CombatOverlord {
+export class GuardSwarmOverlord extends Overlord {
 
-	directive: DirectiveGuardSwarm | DirectiveGuard;
-	guards: Zerg[];
+	directive: DirectiveGuard;
+	guards: CombatZerg[];
 
-	constructor(directive: DirectiveGuardSwarm | DirectiveGuard, priority = OverlordPriority.defense.guard) {
+	constructor(directive: DirectiveGuard, priority = OverlordPriority.outpostDefense.guard) {
 		super(directive, 'swarmGuard', priority);
 		this.directive = directive;
-		this.guards = this.creeps(EarlyGuardSetup.role);
+		this.guards = this.combatZerg(Roles.guardMelee);
 	}
 
 	private findAttackTarget(guard: Zerg): Creep | Structure | undefined | null {
@@ -41,32 +31,33 @@ export class GuardSwarmOverlord extends CombatOverlord {
 		}
 	}
 
-	private handleGuard(guard: Zerg): void {
+	private handleGuard(guard: CombatZerg): void {
 
 		if (guard.pos.roomName != this.pos.roomName) { // TODO: make edge-safe
 			// Move into the assigned room if there is a guard flag present
-			guard.goTo(this.pos);
+			guard.goToRoom(this.pos.roomName);
 		} else { // If you're in the assigned room or if there is no assignment, try to attack or heal
 			let attackTarget = this.findAttackTarget(guard);
 			if (attackTarget) {
-				this.attackAndChase(guard, attackTarget);
+				guard.attackAndChase(attackTarget);
 			} else {
 				guard.park(this.pos); // Move off-road
 			}
 		}
+
 	}
 
 	init() {
 		if (this.directive.memory.amount) {
-			this.wishlist(this.directive.memory.amount, new EarlyGuardSetup());
-		}
-		else {
-			this.wishlist(1, new EarlyGuardSetup());
+			this.wishlist(this.directive.memory.amount, CombatSetups.broodlings.early);
+		} else {
 			if (this.room) {
-				let smallHostiles = _.filter(this.room.hostiles, creep => creep.body.length < 10);
+				let smallHostiles = _.filter(this.room.dangerousHostiles, creep => creep.body.length < 10);
 				if (smallHostiles.length > 2) {
-					this.wishlist(Math.round(smallHostiles.length), new EarlyGuardSetup());
+					this.wishlist(Math.round(smallHostiles.length), CombatSetups.broodlings.early);
 				}
+			} else {
+				this.wishlist(2, CombatSetups.broodlings.early);
 			}
 		}
 	}

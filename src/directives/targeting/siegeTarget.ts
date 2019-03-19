@@ -3,6 +3,9 @@ import {profile} from '../../profiler/decorator';
 import {Visualizer} from '../../visuals/Visualizer';
 import {AttackStructurePriorities} from '../../priorities/priorities_structures';
 
+/**
+ * [LEGACY] Manually specify targets to be prioritized during a siege
+ */
 @profile
 export class DirectiveTargetSiege extends Directive {
 
@@ -12,6 +15,10 @@ export class DirectiveTargetSiege extends Directive {
 
 	constructor(flag: Flag) {
 		super(flag);
+	}
+
+	spawnMoarOverlords() {
+
 	}
 
 	getTarget(): Structure | undefined {

@@ -1,33 +1,39 @@
 import {Directive} from '../Directive';
 import {profile} from '../../profiler/decorator';
-import {GuardOverlord} from '../../overlords/defense/guard';
+import {DefenseNPCOverlord} from '../../overlords/defense/npcDefense';
 import {GuardSwarmOverlord} from '../../overlords/defense/guardSwarm';
 
 interface DirectiveGuardMemory extends FlagMemory {
 	safeTick?: number;
+	enhanced?: boolean;
 }
 
+/**
+ * NPC defense directive for outpost rooms with invaders
+ */
 @profile
 export class DirectiveGuard extends Directive {
 
 	static directiveName = 'guard';
-	static color = COLOR_RED;
+	static color = COLOR_BLUE;
 	static secondaryColor = COLOR_BLUE;
 
 	memory: DirectiveGuardMemory;
 
-	private relocateFrequency: number;
-
 	constructor(flag: Flag) {
 		super(flag);
-		if (this.colony.level >= GuardOverlord.requiredRCL) {
-			this.overlords.guard = new GuardOverlord(this);
-			// this.overlords.guardPair = new GuardPairOverlord(this);
+	}
+
+	spawnMoarOverlords() {
+		if (this.colony.level >= DefenseNPCOverlord.requiredRCL) {
+			// if (this.memory.enhanced || this.name.includes('enhanced')) {
+			// 	this.overlords.guardPair = new GuardPairOverlord(this);
+			// } else {
+			this.overlords.guard = new DefenseNPCOverlord(this);
+			// }
 		} else {
 			this.overlords.swarmGuard = new GuardSwarmOverlord(this);
 		}
-
-		this.relocateFrequency = 10; // Relocate the flag to follow enemy movement every n ticks
 	}
 
 	init(): void {
@@ -35,12 +41,6 @@ export class DirectiveGuard extends Directive {
 	}
 
 	run(): void {
-		// Reloacate the flag
-		if (Game.time % this.relocateFrequency == 0) {
-			if (this.room && this.room.hostiles[0] && this.room.hostiles[0].pos.rangeToEdge >= 3) {
-				this.setPosition(this.room.hostiles[0].pos);
-			}
-		}
 		// If there are no hostiles left in the room...
 		if (this.room && this.room.hostiles.length == 0 && this.room.hostileStructures.length == 0) {
 			// If everyone's healed up, mark as safe
