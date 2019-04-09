@@ -21,20 +21,25 @@
     "push-main": "rollup -c --environment DEST:main",
     "push-pserver": "rollup -c --environment DEST:pserver",
     "push-screepsplus": "rollup -c --environment DEST:screepsplus",
-    "test": "npm run clean && npm run build"
+    "test": "\"mocha --require ts-node/register test/**/*.ts"
   },
   "devDependencies": {
+    "@types/chai": "^4.1.7",
     "@types/lodash": "3.10.1",
+    "@types/mocha": "^5.2.6",
     "@types/screeps": "2.5.2",
+    "chai": "^4.2.0",
+    "mocha": "^6.1.2",
     "rollup": "0.62.0",
     "rollup-plugin-commonjs": "8.4.1",
     "rollup-plugin-node-resolve": "3.3.0",
     "rollup-plugin-progress": "^0.4.0",
     "rollup-plugin-screeps": "0.1.2",
     "rollup-plugin-typescript2": "0.16.1",
+    "ts-node": "^8.0.3",
     "tslint": "5.11.0",
     "typedoc": "^0.14.2",
-    "typescript": "2.9.2"
+    "typescript": "^2.9.2"
   },
   "dependencies": {
     "columnify": "1.5.4",

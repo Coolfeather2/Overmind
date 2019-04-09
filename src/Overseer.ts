@@ -273,11 +273,6 @@ export class Overseer implements IOverseer {
 				let sourceDistances = _.map(sourcePositions, pos => Pathing.distance(origin, pos));
 				if (_.any(sourceDistances, dist => dist == undefined
 					|| dist > Colony.settings.maxSourceDistance)) return false;
-				// Don't create outpost on-top of another Overmind user
-				if (typeof Game.rooms[this.pos.roomName].owner === 'string' && Assimilator.isAssimilated(Game.rooms[roomName].owner!)) {
-					log.debug(`Strategist triggered no outpost on overmind user ${Game.rooms[roomName].owner} for ${roomName}`)
-					return false;
-				}
 				return _.sum(sourceDistances) / sourceDistances.length;
 			});
 
